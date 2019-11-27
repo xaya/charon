@@ -8,17 +8,20 @@ libcharon_la_LIBADD = \
   $(JSON_LIBS) \
   $(GLOG_LIBS) $(GLOOX_LIBS)
 libcharon_la_SOURCES = \
-  stanzas.cpp
+  stanzas.cpp \
+  xmppclient.cpp
 noinst_HEADERS = \
-  private/stanzas.hpp
+  private/stanzas.hpp \
+  private/xmppclient.hpp
 
 check_PROGRAMS = tests
 TESTS = tests
 
 tests_CXXFLAGS = \
-  $(GTEST_CFLAGS) $(GLOG_CFLAGS)
+  $(GTEST_CFLAGS) $(GLOG_CFLAGS) $(GLOOX_CFLAGS)
 tests_LDADD = \
   $(builddir)/libcharon.la \
-  $(GTEST_LIBS) $(GLOG_LIBS)
+  $(GTEST_LIBS) $(GLOG_LIBS) $(GLOOX_LIBS)
 tests_SOURCES = \
-  stanzas_tests.cpp
+  stanzas_tests.cpp \
+  xmppclient_tests.cpp
