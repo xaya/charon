@@ -1,0 +1,30 @@
+[
+  {
+    "name": "echobypos",
+    "params": [10],
+    "returns": 10
+  },
+  {
+    "name": "echobyname",
+    "params":
+      {
+        "value": 10
+      },
+    "returns": 10
+  },
+  {
+    "name": "error",
+    "params":
+      {
+        "code": 1,
+        "msg": "error",
+        "data": {}
+      },
+    "returns": 42
+  },
+  {
+    "name": "donotcall",
+    "params": [],
+    "returns": 42
+  }
+]
