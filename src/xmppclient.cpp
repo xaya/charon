@@ -20,6 +20,7 @@
 
 #include <glog/logging.h>
 
+#include <chrono>
 #include <sstream>
 
 namespace charon
@@ -28,8 +29,11 @@ namespace charon
 namespace
 {
 
-/** Timeout in milliseconds for the blocking recv call.  */
-constexpr int RECV_TIMEOUT_MS = 100;
+/**
+ * Waiting time during the receive loop to give other threads a chance on
+ * locking the mutex if they want to send.
+ */
+constexpr auto WAITING_SLEEP = std::chrono::milliseconds (1);
 
 } // anonymous namespace
 
@@ -48,7 +52,7 @@ XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
 
 XmppClient::~XmppClient ()
 {
-  if (connected)
+  if (recvLoop != nullptr)
     Disconnect ();
 }
 
@@ -58,19 +62,42 @@ XmppClient::Connect (const int priority)
   LOG (INFO)
       << "Connecting to XMPP server with " << jid.full ()
       << " and priority " << priority << "...";
-  CHECK (!connected);
+  CHECK (recvLoop == nullptr);
 
   client.presence ().setPriority (priority);
-
+  connected = false;
   CHECK (client.connect (false));
+
+  stopLoop = false;
+  recvLoop = std::make_unique<std::thread> ([this] ()
+    {
+      while (!stopLoop)
+        {
+          if (!Receive ())
+            return;
+
+          /* Give other threads a chance to lock the mutex if they want to
+             do something (e.g. through RunWithClient).  */
+          std::this_thread::sleep_for (WAITING_SLEEP);
+        }
+    });
+
   while (!connected)
-    Receive ();
+    std::this_thread::sleep_for (WAITING_SLEEP);
 }
 
 bool
 XmppClient::Receive ()
 {
-  const auto res = client.recv (1000 * RECV_TIMEOUT_MS);
+  std::lock_guard<std::recursive_mutex> lock(mut);
+
+  /* This method is called in a loop anyway, with sleeps in between (when not
+     holding the mut lock).  Thus it is enough to really only check if there
+     are waiting messages here without blocking for any amount of time if not.
+     This ensures the lock is not held too much, blocking threads that want
+     to send messages instead.  */
+  const auto res = client.recv (0);
+
   switch (res)
     {
     case gloox::ConnNotConnected:
@@ -91,8 +118,14 @@ XmppClient::Disconnect ()
   LOG (INFO) << "Disconnecting XMPP client " << jid.full () << "...";
 
   client.disconnect ();
-  while (connected)
-    Receive ();
+  connected = false;
+
+  if (recvLoop != nullptr)
+    {
+      stopLoop = true;
+      recvLoop->join ();
+      recvLoop.reset ();
+    }
 }
 
 void
@@ -117,8 +150,6 @@ XmppClient::onDisconnect (const gloox::ConnectionError err)
     default:
       LOG (FATAL) << "Unexpected disconnect: " << err;
     }
-
-  connected = false;
 }
 
 bool

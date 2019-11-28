@@ -23,12 +23,22 @@
 #include <gloox/connectionlistener.h>
 #include <gloox/loghandler.h>
 
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <thread>
+
 namespace charon
 {
 
 /**
  * Basic XMPP client, based on the gloox library.  It manages the connection
  * and logs, but does not have any specific listening or other logic by itself.
+ *
+ * It also takes care of running a separate thread that listens on the XMPP
+ * stream, and synchronising other requests to access the XMPP client (e.g.
+ * send messages).
  */
 class XmppClient : private gloox::ConnectionListener, private gloox::LogHandler
 {
@@ -42,10 +52,29 @@ private:
   gloox::Client client;
 
   /**
-   * Set to true from the connection listener when we are connected.  When
-   * disconnected, this is set back to false.
+   * When connected, this is the thread running polling for new messages.
    */
-  bool connected = false;
+  std::unique_ptr<std::thread> recvLoop;
+
+  /** Signal for the receive loop to stop.  */
+  std::atomic<bool> stopLoop;
+
+  /** Set to true when the connection is established.  */
+  std::atomic<bool> connected;
+
+  /**
+   * Lock used to synchronise receives and other client accesses.  This has
+   * to be recursive so that also callbacks triggered in reply to a message
+   * received during Receive() can again lock the mutex through RunWithClient
+   * (e.g. if they want to send a reply stanza).
+   */
+  std::recursive_mutex mut;
+
+  /**
+   * Checks if there are new XMPP messages to process.  This is what the
+   * receive thread calls repeatedly.
+   */
+  bool Receive ();
 
   void onConnect () override;
   void onDisconnect (gloox::ConnectionError err) override;
@@ -67,17 +96,16 @@ public:
    */
   virtual ~XmppClient ();
 
-  /**
-   * Sets up the connection to the server, using the specified priority.
-   */
-  void Connect (int priority);
+  XmppClient () = delete;
+  XmppClient (const XmppClient&) = delete;
+  void operator= (const XmppClient&) = delete;
 
   /**
-   * Polls the server for new messages.  This should be called regularly
-   * by some event loop to ensure we keep updated.  Returns false if the
-   * connection has been closed.
+   * Sets up the connection to the server, using the specified priority.
+   * Once connected, the receiving loop will be started.  The loop will
+   * run until the connection is closed.
    */
-  bool Receive ();
+  void Connect (int priority);
 
   /**
    * Closes the server connection.
@@ -94,13 +122,15 @@ public:
   }
 
   /**
-   * Returns the gloox client instance, which can be used to gsend messages
-   * and other things.
+   * Runs a provided callback with access to the underlying gloox Client,
+   * synchronised with the receive loop.
    */
-  gloox::Client&
-  GetClient ()
+  template <typename Fcn>
+    void
+    RunWithClient (const Fcn& cb)
   {
-    return client;
+    std::lock_guard<std::recursive_mutex> lock(mut);
+    cb (client);
   }
 
 };

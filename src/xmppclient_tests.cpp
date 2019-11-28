@@ -145,11 +145,7 @@ class TestXmppClient : private XmppClient, private gloox::MessageHandler
 
 private:
 
-  /** Received messages we pass to.  */
   ReceivedMessages messages;
-
-  /** Thread running the receiving loop.  */
-  std::unique_ptr<std::thread> loop;
 
   void
   handleMessage (const gloox::Message& msg,
@@ -166,42 +162,13 @@ public:
   explicit TestXmppClient (const TestAccount& acc)
     : XmppClient(JIDWithoutResource (acc), acc.password)
   {
-    GetClient ().registerMessageHandler (this);
-    Start ();
-  }
-
-  ~TestXmppClient ()
-  {
-    if (loop != nullptr)
-      Stop ();
-  }
-
-  /**
-   * Connects to the server and starts a loop receiving messages.
-   */
-  void
-  Start ()
-  {
-    CHECK (loop == nullptr);
+    RunWithClient ([this] (gloox::Client& c)
+      {
+        c.registerMessageHandler (this);
+      });
 
     /* Connect with the default priority of zero.  */
     Connect (0);
-    loop = std::make_unique<std::thread> ([this] ()
-      {
-        while (Receive ());
-      });
-  }
-
-  /**
-   * Disconnects the XMPP client and stops the receiving loop.
-   */
-  void
-  Stop ()
-  {
-    CHECK (loop != nullptr);
-    Disconnect ();
-    loop->join ();
-    loop.reset ();
   }
 
   /**
@@ -221,10 +188,13 @@ public:
   SendMessage (const TestXmppClient& to, const std::string& body)
   {
     const gloox::JID jidTo = to.GetJID ();
-    VLOG (1) << "Sending to " << jidTo.full () << ":\n" << body;
+    LOG (INFO) << "Sending to " << jidTo.full () << ":\n" << body;
 
     gloox::Message msg(gloox::Message::Chat, jidTo, body);
-    GetClient ().send (msg);
+    RunWithClient ([this, &msg] (gloox::Client& c)
+      {
+        c.send (msg);
+      });
   }
 
 };
