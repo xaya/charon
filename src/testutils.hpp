@@ -54,6 +54,11 @@ extern const TestAccount ACCOUNTS[2];
 gloox::JID JIDWithoutResource (const TestAccount& acc);
 
 /**
+ * Constructs the JID for a test account with the given resource.
+ */
+gloox::JID JIDWithResource (const TestAccount& acc, const std::string& res);
+
+/**
  * Parses a string as JSON (for use in test data).
  */
 Json::Value ParseJson (const std::string& str);

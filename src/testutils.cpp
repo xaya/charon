@@ -42,6 +42,14 @@ JIDWithoutResource (const TestAccount& acc)
   return res;
 }
 
+gloox::JID
+JIDWithResource (const TestAccount& acc, const std::string& res)
+{
+  gloox::JID jid = JIDWithoutResource (acc);
+  jid.setResource (res);
+  return jid;
+}
+
 Json::Value
 ParseJson (const std::string& str)
 {
