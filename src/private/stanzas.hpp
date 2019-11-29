@@ -209,6 +209,58 @@ public:
 
 };
 
+/**
+ * A gloox StanzaExtension representing a "ping" message:
+ *
+ *  <ping xmlns="https://xaya.io/charon/" />
+ */
+class PingMessage : public ValidatedStanzaExtension
+{
+
+public:
+
+  /** Extension type for RPC request extensions.  */
+  static constexpr int EXT_TYPE = gloox::ExtUser + 3;
+
+  /**
+   * Constructs an empty instance, which can be used as a factory
+   * as well as a totally valid message.
+   */
+  PingMessage ();
+
+  const std::string& filterString () const override;
+  gloox::StanzaExtension* newInstance (const gloox::Tag* tag) const override;
+  gloox::StanzaExtension* clone () const override;
+  gloox::Tag* tag () const override;
+
+};
+
+/**
+ * A gloox StanzaExtension representing a "pong" message:
+ *
+ *  <pong xmlns="https://xaya.io/charon/" />
+ */
+class PongMessage : public ValidatedStanzaExtension
+{
+
+public:
+
+  /** Extension type for RPC request extensions.  */
+  static constexpr int EXT_TYPE = gloox::ExtUser + 4;
+
+  /**
+   * Constructs an empty instance, which can be used as a factory
+   * as well as a totally valid message.
+   */
+  PongMessage ();
+
+  const std::string& filterString () const override;
+  gloox::StanzaExtension* newInstance (const gloox::Tag* tag) const override;
+  gloox::StanzaExtension* clone () const override;
+  gloox::Tag* tag () const override;
+
+};
+
 } // namespace charon
 
 #endif // CHARON_STANZAS_HPP

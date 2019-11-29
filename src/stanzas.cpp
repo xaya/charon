@@ -350,4 +350,74 @@ RpcResponse::tag () const
 
 /* ************************************************************************** */
 
+PingMessage::PingMessage ()
+  : ValidatedStanzaExtension(EXT_TYPE)
+{
+  SetValid (true);
+}
+
+const std::string&
+PingMessage::filterString () const
+{
+  static const std::string filter = "/message/ping[@xmlns='" XMLNS "']";
+  return filter;
+}
+
+gloox::StanzaExtension*
+PingMessage::newInstance (const gloox::Tag* tag) const
+{
+  return new PingMessage ();
+}
+
+gloox::StanzaExtension*
+PingMessage::clone () const
+{
+  return new PingMessage ();
+}
+
+gloox::Tag*
+PingMessage::tag () const
+{
+  auto res = std::make_unique<gloox::Tag> ("ping");
+  CHECK (res->setXmlns (XMLNS));
+
+  return res.release ();
+}
+
+PongMessage::PongMessage ()
+  : ValidatedStanzaExtension(EXT_TYPE)
+{
+  SetValid (true);
+}
+
+const std::string&
+PongMessage::filterString () const
+{
+  static const std::string filter = "/message/pong[@xmlns='" XMLNS "']";
+  return filter;
+}
+
+gloox::StanzaExtension*
+PongMessage::newInstance (const gloox::Tag* tag) const
+{
+  return new PongMessage ();
+}
+
+gloox::StanzaExtension*
+PongMessage::clone () const
+{
+  return new PongMessage ();
+}
+
+gloox::Tag*
+PongMessage::tag () const
+{
+  auto res = std::make_unique<gloox::Tag> ("pong");
+  CHECK (res->setXmlns (XMLNS));
+
+  return res.release ();
+}
+
+/* ************************************************************************** */
+
 } // namespace charon
