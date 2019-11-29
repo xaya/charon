@@ -11,6 +11,8 @@
 
 #include <gloox/iq.h>
 #include <gloox/iqhandler.h>
+#include <gloox/message.h>
+#include <gloox/messagehandler.h>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
@@ -144,20 +146,19 @@ public:
  * Test case that runs a Charon server as well as a custom XMPP client for
  * sending IQ requests to the server.
  */
-class ServerTests : public testing::Test, private XmppClient
+class ServerTests : public testing::Test, protected XmppClient
 {
 
 private:
-
-  static constexpr const TestAccount& accServer = ACCOUNTS[0];
-  static constexpr const TestAccount& accClient = ACCOUNTS[1];
-  static constexpr const char* SERVER_RES = "test";
 
   Backend backend;
 
 protected:
 
-  ReceivedIqResults results;
+  static constexpr const TestAccount& accServer = ACCOUNTS[0];
+  static constexpr const TestAccount& accClient = ACCOUNTS[1];
+  static constexpr const char* SERVER_RES = "test";
+
   Server server;
 
   ServerTests ()
@@ -168,6 +169,8 @@ protected:
       {
         c.registerStanzaExtension (new RpcRequest ());
         c.registerStanzaExtension (new RpcResponse ());
+        c.registerStanzaExtension (new PingMessage ());
+        c.registerStanzaExtension (new PongMessage ());
       });
 
     server.Connect (JIDWithResource (accServer, SERVER_RES).full (),
@@ -175,11 +178,109 @@ protected:
     Connect (0);
   }
 
+};
+
+constexpr const char* ServerTests::SERVER_RES;
+
+/* ************************************************************************** */
+
+/**
+ * Test case for the initial ping/pong recovery of the server full JID.
+ */
+class ServerPingTests : public ServerTests, private gloox::MessageHandler
+{
+
+private:
+
+  /** Signals when a pong message has been handled.  */
+  std::condition_variable cv;
+
+  /** Mutex for cv.  */
+  std::mutex mut;
+
+  /** Resource of the sender of pong.  */
+  std::string pongResource;
+
+  void
+  handleMessage (const gloox::Message& msg,
+                 gloox::MessageSession* session) override
+  {
+    VLOG (1) << "Processing message from " << msg.from ().full ();
+
+    auto* ext = msg.findExtension (PongMessage::EXT_TYPE);
+    if (ext != nullptr)
+      {
+        LOG (INFO) << "Received pong from " << msg.from ().full ();
+
+        std::lock_guard<std::mutex> lock(mut);
+        pongResource = msg.from ().resource ();
+        cv.notify_all ();
+      }
+  }
+
+protected:
+
+  ServerPingTests ()
+  {
+    RunWithClient ([this] (gloox::Client& c)
+      {
+        c.registerMessageHandler (this);
+      });
+  }
+
+  /**
+   * Sends a ping to the given JID.
+   */
+  void
+  SendPing (const gloox::JID& to)
+  {
+    gloox::Message msg(gloox::Message::Normal, to);
+    msg.addExtension (new PingMessage ());
+
+    RunWithClient ([&msg] (gloox::Client& c)
+      {
+        c.send (msg);
+      });
+  }
+
+  /**
+   * Waits for receipt of a pong message.  Returns the pong sender's resource.
+   */
+  std::string
+  WaitForPong ()
+  {
+    std::unique_lock<std::mutex> lock(mut);
+    while (pongResource.empty ())
+      cv.wait (lock);
+
+    return pongResource;
+  }
+
+};
+
+TEST_F (ServerPingTests, GetResource)
+{
+  SendPing (JIDWithoutResource (accServer));
+  EXPECT_EQ (WaitForPong (), SERVER_RES);
+}
+
+/* ************************************************************************** */
+
+/**
+ * Test case for answering ordinary RPC requests sent as IQs to the server.
+ */
+class ServerRpcTests : public ServerTests
+{
+
+protected:
+
+  ReceivedIqResults results;
+
   /**
    * Sends a new request to the server.
    */
   void
-  SendMessage (const int context, const std::string& method,
+  SendRequest (const int context, const std::string& method,
                const std::string& param)
   {
     LOG (INFO)
@@ -202,25 +303,23 @@ protected:
 
 };
 
-/* ************************************************************************** */
-
-TEST_F (ServerTests, Success)
+TEST_F (ServerRpcTests, Success)
 {
-  SendMessage (42, "echo", "foo");
+  SendRequest (42, "echo", "foo");
   results.Expect ({{42, "foo"}});
 }
 
-TEST_F (ServerTests, Error)
+TEST_F (ServerRpcTests, Error)
 {
-  SendMessage (42, "error", "foo");
+  SendRequest (42, "error", "foo");
   results.Expect ({{42, "error foo"}});
 }
 
-TEST_F (ServerTests, MultipleRequests)
+TEST_F (ServerRpcTests, MultipleRequests)
 {
-  SendMessage (1, "echo", "foo");
-  SendMessage (2, "error", "bar");
-  SendMessage (3, "echo", "baz");
+  SendRequest (1, "echo", "foo");
+  SendRequest (2, "error", "bar");
+  SendRequest (3, "echo", "baz");
   results.Expect (
     {
       {1, "foo"},

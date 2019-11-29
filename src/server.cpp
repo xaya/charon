@@ -23,6 +23,8 @@
 
 #include <gloox/iq.h>
 #include <gloox/iqhandler.h>
+#include <gloox/message.h>
+#include <gloox/messagehandler.h>
 
 #include <glog/logging.h>
 
@@ -33,7 +35,9 @@ namespace charon
  * The actual working class for our Charon server.  This uses XmppClient for
  * the actual XMPP connection, and listens for incoming IQ requests.
  */
-class Server::IqAnsweringClient : public XmppClient, private gloox::IqHandler
+class Server::IqAnsweringClient : public XmppClient,
+                                  private gloox::MessageHandler,
+                                  private gloox::IqHandler
 {
 
 private:
@@ -41,6 +45,8 @@ private:
   /** The backend server to use for answering requests.  */
   RpcServer& backend;
 
+  void handleMessage (const gloox::Message& msg,
+                      gloox::MessageSession* session) override;
   bool handleIq (const gloox::IQ& iq) override;
   void handleIqID (const gloox::IQ& iq, int context) override;
 
@@ -60,8 +66,33 @@ Server::IqAnsweringClient::IqAnsweringClient (RpcServer& b,
     {
       c.registerStanzaExtension (new RpcRequest ());
       c.registerStanzaExtension (new RpcResponse ());
+      c.registerStanzaExtension (new PingMessage ());
+      c.registerStanzaExtension (new PongMessage ());
+
+      c.registerMessageHandler (this);
       c.registerIqHandler (this, RpcRequest::EXT_TYPE);
     });
+}
+
+void
+Server::IqAnsweringClient::handleMessage (const gloox::Message& msg,
+                                          gloox::MessageSession* session)
+{
+  VLOG (1) << "Received message stanza from " << msg.from ().full ();
+
+  auto* ping = msg.findExtension<PingMessage> (PingMessage::EXT_TYPE);
+  if (ping != nullptr)
+    {
+      LOG (INFO) << "Processing ping from " << msg.from ().full ();
+
+      gloox::Message response(gloox::Message::Normal, msg.from ());
+      response.addExtension (new PongMessage ());
+
+      RunWithClient ([&response] (gloox::Client& c)
+        {
+          c.send (response);
+        });
+    }
 }
 
 bool
@@ -102,7 +133,7 @@ Server::IqAnsweringClient::handleIq (const gloox::IQ& iq)
   gloox::IQ response(gloox::IQ::Result, iq.from (), iq.id ());
   response.addExtension (result.release ());
 
-  RunWithClient ([this, &response] (gloox::Client& c)
+  RunWithClient ([&response] (gloox::Client& c)
     {
       c.send (response);
     });
