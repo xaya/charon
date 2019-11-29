@@ -4,6 +4,8 @@
 
 #include "private/xmppclient.hpp"
 
+#include "testutils.hpp"
+
 #include <gloox/message.h>
 #include <gloox/messagehandler.h>
 
@@ -24,43 +26,6 @@ namespace
 using testing::IsEmpty;
 
 /* ************************************************************************** */
-
-/** The XMPP server used for testing.  */
-constexpr const char* XMPP_SERVER = "chat.xaya.io";
-
-/**
- * Data for one of the test accounts that we use.
- */
-struct TestAccount
-{
-
-  /** The username for the XMPP server.  */
-  const char* name;
-
-  /** The password for logging into the server.  */
-  const char* password;
-
-};
-
-/**
- * Our test accounts.  They are all set up for XID on mainnet, and the address
- * CLkoEc3g1XCqF1yevLfE1F2EksLhGSd8GC is set as global signer.  It has the
- * private key LMeJqBHefZdZbH7pHBqhmBu3pFzBpVo78SnBgsoHc6KYaDv9CEYp.
- * The passwords given are unexpiring XID credentials for chat.xaya.io.
- */
-constexpr TestAccount ACCOUNTS[] =
-  {
-    {
-      "xmpptest1",
-      "CkEfa5+WT2Rc5/TiMDhMynAbSJ+DY9FmE5lcWgWMRQWUBV5UQsgjiBWL302N4kdLZYygJVBV"
-      "x3vYsDNUx8xBbw27WA==",
-    },
-    {
-      "xmpptest2",
-      "CkEgOEFNwRdLQ6uD543MJLSzip7mTahM1we9GDl3S5NlR49nrJ0JxcFfQmDbbF4C4OpqSlTp"
-      "x8OG6xtFjCUMLh/AGA==",
-    },
-  };
 
 /**
  * A queue of received messages, including a mechanism to synchronise adding
@@ -123,18 +88,6 @@ public:
   }
 
 };
-
-/**
- * Constructs the JID for a test account, without resource.
- */
-gloox::JID
-JIDWithoutResource (const TestAccount& acc)
-{
-  gloox::JID res;
-  res.setUsername (acc.name);
-  res.setServer (XMPP_SERVER);
-  return res;
-}
 
 /**
  * XMPP client connection for use in testing.  It can send messages and

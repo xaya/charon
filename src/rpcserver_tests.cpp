@@ -19,6 +19,7 @@
 #include "rpcserver.hpp"
 
 #include "rpc-stubs/testbackendserverstub.h"
+#include "testutils.hpp"
 
 #include <jsonrpccpp/server/connectors/httpserver.h>
 
@@ -129,31 +130,29 @@ protected:
 
 TEST_F (ForwardingRpcServerTests, PositionalArguments)
 {
-  Json::Value params(Json::arrayValue);
-  params.append (5);
-
-  EXPECT_EQ (server.HandleMethod ("echobypos", params), 5);
+  EXPECT_EQ (server.HandleMethod ("echobypos", ParseJson ("[5]")), 5);
 }
 
 TEST_F (ForwardingRpcServerTests, KeywordArguments)
 {
-  Json::Value params(Json::objectValue);
-  params["value"] = 10;
-
-  EXPECT_EQ (server.HandleMethod ("echobyname", params), 10);
+  EXPECT_EQ (server.HandleMethod ("echobyname", ParseJson (R"({"value": 10})")),
+             10);
 }
 
 TEST_F (ForwardingRpcServerTests, Error)
 {
-  Json::Value params(Json::objectValue);
-  params["code"] = 42;
-  params["msg"] = "error";
-  params["data"] = Json::Value (Json::objectValue);
-  params["data"]["foo"] = "bar";
-
   try
     {
-      server.HandleMethod ("error", params);
+      server.HandleMethod ("error", ParseJson (R"(
+        {
+          "code": 42,
+          "msg": "error",
+          "data":
+            {
+              "foo": "bar"
+            }
+        }
+      )"));
       FAIL () << "Expected error not thrown";
     }
   catch (const RpcServer::Error& exc)
@@ -170,7 +169,7 @@ TEST_F (ForwardingRpcServerTests, MethodNotAllowed)
 {
   try
     {
-      server.HandleMethod ("donotcall", Json::Value (Json::arrayValue));
+      server.HandleMethod ("donotcall", ParseJson ("[]"));
       FAIL () << "Expected error not thrown";
     }
   catch (const RpcServer::Error& exc)

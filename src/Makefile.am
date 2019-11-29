@@ -35,10 +35,13 @@ tests_LDADD = \
   $(JSON_LIBS) $(JSONRPCCLIENT_LIBS) $(JSONRPCSERVER_LIBS) \
   $(GTEST_LIBS) $(GLOG_LIBS) $(GLOOX_LIBS)
 tests_SOURCES = \
+  testutils.cpp \
+  \
   rpcserver_tests.cpp \
   stanzas_tests.cpp \
   xmppclient_tests.cpp
 check_HEADERS = \
+  testutils.hpp \
   rpc-stubs/testbackendserverstub.h
 
 rpc-stubs/testbackendserverstub.h: $(srcdir)/rpc-stubs/testbackend.json

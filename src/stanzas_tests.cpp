@@ -18,6 +18,8 @@
 
 #include "private/stanzas.hpp"
 
+#include "testutils.hpp"
+
 #include <gtest/gtest.h>
 
 #include <glog/logging.h>
@@ -57,10 +59,7 @@ using RpcRequestTests = testing::Test;
 
 TEST_F (RpcRequestTests, ParamsArray)
 {
-  Json::Value params(Json::arrayValue);
-  params.append ("foo");
-  params.append (42);
-
+  const auto params = ParseJson (R"(["foo", 42])");
   const RpcRequest original("method", params);
   ASSERT_TRUE (original.IsValid ());
 
@@ -72,10 +71,12 @@ TEST_F (RpcRequestTests, ParamsArray)
 
 TEST_F (RpcRequestTests, ParamsObject)
 {
-  Json::Value params(Json::objectValue);
-  params["name"] = "foo";
-  params["count"] = 42;
-
+  const auto params = ParseJson (R"(
+    {
+      "name": "foo",
+      "value": 42
+    }
+  )");
   const RpcRequest original("method", params);
   ASSERT_TRUE (original.IsValid ());
 
@@ -91,10 +92,12 @@ using RpcResponseTests = testing::Test;
 
 TEST_F (RpcResponseTests, Success)
 {
-  Json::Value result(Json::objectValue);
-  result["foo"] = "bar";
-  result["count"] = 42;
-
+  const auto result = ParseJson (R"(
+    {
+      "foo": "bar",
+      "count": 42
+    }
+  )");
   const RpcResponse original(result);
   ASSERT_TRUE (original.IsValid ());
   ASSERT_TRUE (original.IsSuccess ());
@@ -107,10 +110,12 @@ TEST_F (RpcResponseTests, Success)
 
 TEST_F (RpcResponseTests, ErrorWithData)
 {
-  Json::Value data(Json::objectValue);
-  data["foo"] = "bar";
-  data["count"] = 42;
-
+  const auto data = ParseJson (R"(
+    {
+      "foo": "bar",
+      "count": 42
+    }
+  )");
   const RpcResponse original(-10, "my error", data);
   ASSERT_TRUE (original.IsValid ());
   ASSERT_FALSE (original.IsSuccess ());
