@@ -246,9 +246,38 @@ TEST_F (ClientRpcForwardingTests, MultipleThreads)
     t.join ();
 }
 
-/* FIXME: Also test what happens if the selected server gets disconnected,
-   i.e. we get an XMPP "service unavailable" error.  In that case, we should
-   try to reselect the XMPP server JID.  */
+TEST_F (ClientRpcForwardingTests, ServerReselection)
+{
+  /* Start by connecting a server instance and making a call to it, which
+     will also select it in the client.  */
+  auto srv = ConnectServer ();
+  EXPECT_EQ (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")), "foo");
+
+  /* Disconnect the server and make sure it is "settled" with the XMPP
+     server before continuing.  */
+  srv.reset ();
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+
+  /* Reconnect another Charon server instance.  If we then make
+     another call, the client should notice the original server is gone
+     and should reselect another instance.  */
+  srv = ConnectServer ();
+  EXPECT_EQ (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")), "foo");
+}
+
+TEST_F (ClientRpcForwardingTests, ServerReselectionNotAvailable)
+{
+  auto srv = ConnectServer ();
+  EXPECT_EQ (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")), "foo");
+
+  srv.reset ();
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+
+  /* No other server instance is available, so the call should time out.  */
+  client.SetTimeout (std::chrono::milliseconds (100));
+  EXPECT_THROW (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")),
+                RpcServer::Error);
+}
 
 /* ************************************************************************** */
 

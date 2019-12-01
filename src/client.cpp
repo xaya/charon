@@ -21,6 +21,7 @@
 #include "private/stanzas.hpp"
 #include "private/xmppclient.hpp"
 
+#include <gloox/error.h>
 #include <gloox/iq.h>
 #include <gloox/iqhandler.h>
 #include <gloox/message.h>
@@ -117,17 +118,35 @@ public:
 struct OngoingRpcCall
 {
 
+  /**
+   * Possible states for an ongoing RPC call.
+   */
+  enum class State
+  {
+    /** The call is waiting for a server response.  */
+    WAITING,
+    /**
+     * The server replied with "service unavailable" and we should try
+     * to select another resource.
+     */
+    RESELECT,
+    /** We have a response and it was success.  */
+    RESPONSE_SUCCESS,
+    /** We have a response and it was an error.  */
+    RESPONSE_ERROR,
+  };
+
   /** Condition variable (and timeout) for the response.  */
   TimedConditionVariable cv;
 
   /** Mutex for the condition variable.  */
   std::mutex mut;
 
-  /** If true, then the result has been received already.  */
-  bool finished;
+  /** The state of this call.  */
+  State state;
 
-  /** Whether or not the result is a success.  */
-  bool success;
+  /** JID to which we sent.  */
+  gloox::JID serverJid;
 
   /** If success, the RPC result.  */
   Json::Value result;
@@ -137,7 +156,7 @@ struct OngoingRpcCall
 
   template <typename Rep, typename Period>
     explicit OngoingRpcCall (const std::chrono::duration<Rep, Period>& t)
-      : cv(t), finished(false), error(0)
+      : cv(t), state(State::WAITING), error(0)
   {}
 
 };
@@ -181,6 +200,30 @@ RpcResultHandler::handleIq (const gloox::IQ& iq)
 void
 RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
 {
+  std::unique_lock<std::mutex> lock(call->mut);
+  if (call->state != OngoingRpcCall::State::WAITING)
+    {
+      LOG (WARNING) << "Ignoring IQ for non-waiting call";
+      return;
+    }
+
+  /* If we get a "service unavailable" reply from the server, it means that
+     our selected server resource is no longer available and we should reselect
+     another one.  */
+  if (iq.subtype () == gloox::IQ::Error)
+    {
+      const auto* err = iq.error ();
+      if (err != nullptr
+            && err->error () == gloox::StanzaErrorServiceUnavailable)
+        {
+          LOG (WARNING)
+              << "Service unavailable, we need to reselect the server JID";
+          call->state = OngoingRpcCall::State::RESELECT;
+          call->cv.Notify ();
+          return;
+        }
+    }
+
   if (iq.subtype () != gloox::IQ::Result)
     {
       LOG (WARNING)
@@ -198,22 +241,18 @@ RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
       return;
     }
 
-  std::unique_lock<std::mutex> lock(call->mut);
-  if (call->finished)
+  if (ext->IsSuccess ())
     {
-      LOG (WARNING) << "Ignoring IQ for already finished call";
-      return;
+      call->state = OngoingRpcCall::State::RESPONSE_SUCCESS;
+      call->result = ext->GetResult ();
     }
-
-  call->finished = true;
-  call->success = ext->IsSuccess ();
-
-  if (call->success)
-    call->result = ext->GetResult ();
   else
-    call->error = RpcServer::Error (ext->GetErrorCode (),
-                                    ext->GetErrorMessage (),
-                                    ext->GetErrorData ());
+    {
+      call->state = OngoingRpcCall::State::RESPONSE_ERROR;
+      call->error = RpcServer::Error (ext->GetErrorCode (),
+                                      ext->GetErrorMessage (),
+                                      ext->GetErrorData ());
+    }
 
   call->cv.Notify ();
 }
@@ -397,6 +436,7 @@ Client::Impl::ForwardMethod (const std::string& method,
   }
 
   auto call = std::make_shared<OngoingRpcCall> (client.timeout);
+  call->serverJid = iq->to ();
   RunWithClient ([&] (gloox::Client& c)
     {
       LOG (INFO)
@@ -404,25 +444,39 @@ Client::Impl::ForwardMethod (const std::string& method,
           << " to " << iq->to ().full ();
       c.send (*iq, new RpcResultHandler (call), 0, true);
     });
+  iq.reset ();
 
   while (true)
     {
-      std::unique_lock<std::mutex> lock(call->mut);
-      call->cv.Wait (lock);
+      std::unique_lock<std::mutex> callLock(call->mut);
+      call->cv.Wait (callLock);
 
-      if (call->finished)
+      switch (call->state)
         {
-          LOG (INFO) << "Received call result";
-          if (!call->success)
-            throw call->error;
+        case OngoingRpcCall::State::RESPONSE_SUCCESS:
+          LOG (INFO) << "Received success call result";
           return call->result;
+        case OngoingRpcCall::State::RESPONSE_ERROR:
+          LOG (INFO) << "Received error call result";
+          throw call->error;
+
+        case OngoingRpcCall::State::RESELECT:
+          {
+            std::unique_lock<std::mutex> lock(mut);
+            if (fullServerJid == call->serverJid)
+              fullServerJid = fullServerJid.bareJID ();
+          }
+          return ForwardMethod (method, params);
+
+        default:
+          break;
         }
 
       if (call->cv.IsTimedOut ())
         {
           LOG (WARNING) << "Call to " << method << " timed out";
           std::ostringstream msg;
-          msg << "timeout waiting for result from " << iq->to ().full ();
+          msg << "timeout waiting for result from " << call->serverJid.full ();
           throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
                                   msg.str ());
         }
