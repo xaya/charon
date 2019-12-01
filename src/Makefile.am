@@ -15,11 +15,13 @@ libcharon_la_LIBADD = \
   $(JSON_LIBS) $(JSONRPCCLIENT_LIBS) $(JSONRPCSERVER_LIBS) \
   $(GLOG_LIBS) $(GLOOX_LIBS)
 libcharon_la_SOURCES = \
+  client.cpp \
   rpcserver.cpp \
   server.cpp \
   stanzas.cpp \
   xmppclient.cpp
 charon_HEADERS = \
+  client.hpp \
   rpcserver.hpp \
   server.hpp
 noinst_HEADERS = \
@@ -39,6 +41,7 @@ tests_LDADD = \
 tests_SOURCES = \
   testutils.cpp \
   \
+  client_tests.cpp \
   rpcserver_tests.cpp \
   server_tests.cpp \
   stanzas_tests.cpp \
