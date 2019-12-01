@@ -6,7 +6,6 @@
 
 #include "private/stanzas.hpp"
 #include "private/xmppclient.hpp"
-#include "rpcserver.hpp"
 #include "testutils.hpp"
 
 #include <gloox/iq.h>
@@ -32,34 +31,6 @@ namespace
 using testing::IsEmpty;
 
 /* ************************************************************************** */
-
-/**
- * Backend for answering RPC calls in a dummy fashion.
- */
-class Backend : public RpcServer
-{
-
-public:
-
-  Backend () = default;
-
-  Json::Value
-  HandleMethod (const std::string& method, const Json::Value& params) override
-  {
-    CHECK (params.isArray ());
-    CHECK_EQ (params.size (), 1);
-    CHECK (params[0].isString ());
-
-    if (method == "echo")
-      return params[0];
-
-    if (method == "error")
-      throw Error (42, params[0].asString (), Json::Value ());
-
-    LOG (FATAL) << "Unexpected method: " << method;
-  }
-
-};
 
 /**
  * A list of received IQ results.  This is what we use to handle the
@@ -151,7 +122,7 @@ class ServerTests : public testing::Test, protected XmppClient
 
 private:
 
-  Backend backend;
+  TestBackend backend;
 
 protected:
 

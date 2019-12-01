@@ -59,4 +59,20 @@ ParseJson (const std::string& str)
   return res;
 }
 
+Json::Value
+TestBackend::HandleMethod (const std::string& method, const Json::Value& params)
+{
+  CHECK (params.isArray ());
+  CHECK_EQ (params.size (), 1);
+  CHECK (params[0].isString ());
+
+  if (method == "echo")
+    return params[0];
+
+  if (method == "error")
+    throw Error (42, params[0].asString (), Json::Value ());
+
+  LOG (FATAL) << "Unexpected method: " << method;
+}
+
 } // namespace charon

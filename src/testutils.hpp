@@ -19,6 +19,8 @@
 #ifndef CHARON_TESTUTILS_HPP
 #define CHARON_TESTUTILS_HPP
 
+#include "rpcserver.hpp"
+
 #include <gloox/jid.h>
 
 #include <json/json.h>
@@ -62,6 +64,24 @@ gloox::JID JIDWithResource (const TestAccount& acc, const std::string& res);
  * Parses a string as JSON (for use in test data).
  */
 Json::Value ParseJson (const std::string& str);
+
+/**
+ * Backend for answering RPC calls in a dummy fashion.  It supports two
+ * methods (both accept a single string as positional argument):  "echo"
+ * returns the argument back to the caller, while "error" throws a JSON-RPC
+ * error with the string as message.
+ */
+class TestBackend : public RpcServer
+{
+
+public:
+
+  TestBackend () = default;
+
+  Json::Value HandleMethod (const std::string& method,
+                            const Json::Value& params) override;
+
+};
 
 } // namespace charon
 
