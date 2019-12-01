@@ -21,14 +21,19 @@
 #include "private/stanzas.hpp"
 #include "private/xmppclient.hpp"
 
+#include <gloox/iq.h>
+#include <gloox/iqhandler.h>
 #include <gloox/message.h>
 #include <gloox/messagehandler.h>
 #include <gloox/jid.h>
+
+#include <jsonrpccpp/common/errors.h>
 
 #include <glog/logging.h>
 
 #include <condition_variable>
 #include <mutex>
+#include <sstream>
 
 namespace charon
 {
@@ -106,6 +111,113 @@ public:
 
 };
 
+/**
+ * Data for an ongoing RPC method call.
+ */
+struct OngoingRpcCall
+{
+
+  /** Condition variable (and timeout) for the response.  */
+  TimedConditionVariable cv;
+
+  /** Mutex for the condition variable.  */
+  std::mutex mut;
+
+  /** If true, then the result has been received already.  */
+  bool finished;
+
+  /** Whether or not the result is a success.  */
+  bool success;
+
+  /** If success, the RPC result.  */
+  Json::Value result;
+
+  /** If error, the thrown error.  */
+  RpcServer::Error error;
+
+  template <typename Rep, typename Period>
+    explicit OngoingRpcCall (const std::chrono::duration<Rep, Period>& t)
+      : cv(t), finished(false), error(0)
+  {}
+
+};
+
+/**
+ * IQ handler that waits for a specific RPC method result.
+ */
+class RpcResultHandler : public gloox::IqHandler
+{
+
+private:
+
+  /**
+   * Data about the ongoing call.  This will be updated (and the waiting
+   * thread notified) when we receive our result.
+   */
+  std::shared_ptr<OngoingRpcCall> call;
+
+public:
+
+  explicit RpcResultHandler (std::shared_ptr<OngoingRpcCall> c)
+    : call(c)
+  {}
+
+  RpcResultHandler () = delete;
+  RpcResultHandler (const RpcResultHandler&) = delete;
+  void operator= (const RpcResultHandler&) = delete;
+
+  bool handleIq (const gloox::IQ& iq) override;
+  void handleIqID (const gloox::IQ& iq, int context) override;
+
+};
+
+bool
+RpcResultHandler::handleIq (const gloox::IQ& iq)
+{
+  LOG (WARNING) << "Ignoring IQ without id";
+  return false;
+}
+
+void
+RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
+{
+  if (iq.subtype () != gloox::IQ::Result)
+    {
+      LOG (WARNING)
+          << "Ignoring IQ of type " << iq.subtype ()
+          << " from " << iq.from ().full ();
+      return;
+    }
+
+  const auto* ext = iq.findExtension<RpcResponse> (RpcResponse::EXT_TYPE);
+  if (ext == nullptr)
+    {
+      LOG (WARNING)
+          << "Ignoring IQ from " << iq.from ().full ()
+          << " without RpcResponse extension";
+      return;
+    }
+
+  std::unique_lock<std::mutex> lock(call->mut);
+  if (call->finished)
+    {
+      LOG (WARNING) << "Ignoring IQ for already finished call";
+      return;
+    }
+
+  call->finished = true;
+  call->success = ext->IsSuccess ();
+
+  if (call->success)
+    call->result = ext->GetResult ();
+  else
+    call->error = RpcServer::Error (ext->GetErrorCode (),
+                                    ext->GetErrorMessage (),
+                                    ext->GetErrorData ());
+
+  call->cv.Notify ();
+}
+
 } // anonymous namespace
 
 /**
@@ -167,6 +279,12 @@ public:
    * Returns the server's resource and tries to find one if none is there.
    */
   std::string GetServerResource ();
+
+  /**
+   * Forwards the given RPC call to the server.
+   */
+  Json::Value ForwardMethod (const std::string& method,
+                             const Json::Value& params);
 
 };
 
@@ -257,6 +375,60 @@ Client::Impl::GetServerResource ()
   return fullServerJid.resource ();
 }
 
+Json::Value
+Client::Impl::ForwardMethod (const std::string& method,
+                             const Json::Value& params)
+{
+  std::unique_ptr<gloox::IQ> iq;
+  {
+    std::unique_lock<std::mutex> lock(mut);
+    TryEnsureFullServerJid (lock);
+
+    if (!HasFullServerJid ())
+      {
+        std::ostringstream msg;
+        msg << "could not discover full server JID for " << client.serverJid;
+        throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                                msg.str ());
+      }
+
+    iq = std::make_unique<gloox::IQ> (gloox::IQ::Get, fullServerJid);
+    iq->addExtension (new RpcRequest (method, params));
+  }
+
+  auto call = std::make_shared<OngoingRpcCall> (client.timeout);
+  RunWithClient ([&] (gloox::Client& c)
+    {
+      LOG (INFO)
+          << "Sending IQ request for method " << method
+          << " to " << iq->to ().full ();
+      c.send (*iq, new RpcResultHandler (call), 0, true);
+    });
+
+  while (true)
+    {
+      std::unique_lock<std::mutex> lock(call->mut);
+      call->cv.Wait (lock);
+
+      if (call->finished)
+        {
+          LOG (INFO) << "Received call result";
+          if (!call->success)
+            throw call->error;
+          return call->result;
+        }
+
+      if (call->cv.IsTimedOut ())
+        {
+          LOG (WARNING) << "Call to " << method << " timed out";
+          std::ostringstream msg;
+          msg << "timeout waiting for result from " << iq->to ().full ();
+          throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                                  msg.str ());
+        }
+    }
+}
+
 Client::Client (const std::string& srv)
   : serverJid(srv)
 {
@@ -289,6 +461,13 @@ Client::GetServerResource ()
 {
   CHECK (impl != nullptr);
   return impl->GetServerResource ();
+}
+
+Json::Value
+Client::ForwardMethod (const std::string& method, const Json::Value& params)
+{
+  CHECK (impl != nullptr);
+  return impl->ForwardMethod (method, params);
 }
 
 } // namespace charon
