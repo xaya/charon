@@ -119,7 +119,7 @@ RpcRequest::RpcRequest (const gloox::Tag& t)
     }
   if (!ParseJsonFromTag (*child, params))
     return;
-  if (!params.isObject () && !params.isArray ())
+  if (!params.isObject () && !params.isArray () && !params.isNull ())
     {
       LOG (WARNING) << "request params is neither object nor array";
       return;
