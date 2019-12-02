@@ -106,6 +106,12 @@ Server::IqAnsweringClient::handleIq (const gloox::IQ& iq)
      since that's how we registered it.  */
   CHECK (req != nullptr) << "IQ has no RpcRequest extension";
 
+  if (!req->IsValid ())
+    {
+      LOG (WARNING) << "Ignoring invalid RpcRequest stanza";
+      return false;
+    }
+
   if (iq.subtype () != gloox::IQ::Get)
     {
       LOG (WARNING) << "Ignoring IQ of type " << iq.subtype ();

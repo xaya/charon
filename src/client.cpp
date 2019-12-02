@@ -240,6 +240,11 @@ RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
           << " without RpcResponse extension";
       return;
     }
+  if (!ext->IsValid ())
+    {
+      LOG (WARNING) << "Ignoring invalid RpcResponse stanza";
+      return;
+    }
 
   if (ext->IsSuccess ())
     {
