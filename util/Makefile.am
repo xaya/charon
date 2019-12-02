@@ -8,4 +8,8 @@ charon_server_LDADD = \
   $(top_builddir)/src/libcharon.la \
   $(JSON_LIBS) $(JSONRPCCLIENT_LIBS) $(JSONRPCSERVER_LIBS) \
   $(GLOG_LIBS) $(GFLAGS_LIBS)
-charon_server_SOURCES = server.cpp
+charon_server_SOURCES = server.cpp \
+  methods.cpp
+
+noinst_HEADERS = \
+  methods.hpp

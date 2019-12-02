@@ -18,6 +18,8 @@
 
 #include "config.h"
 
+#include "methods.hpp"
+
 #include "rpcserver.hpp"
 #include "server.hpp"
 
@@ -27,7 +29,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
-#include <sstream>
 #include <thread>
 
 namespace
@@ -35,7 +36,6 @@ namespace
 
 DEFINE_string (backend_rpc_url, "",
                "URL at which the backend JSON-RPC interface is available");
-DEFINE_string (methods, "", "Comma-separated list of methods to forward");
 
 DEFINE_string (server_jid, "", "Bare or full JID for the server");
 DEFINE_string (password, "", "XMPP password for the server JID");
@@ -62,22 +62,18 @@ main (int argc, char** argv)
       std::cerr << "Error: --server_jid must be set" << std::endl;
       return EXIT_FAILURE;
     }
-  if (FLAGS_methods.empty ())
-    {
-      std::cerr << "Error: no allowed --methods are set" << std::endl;
-      return EXIT_FAILURE;
-    }
 
   charon::ForwardingRpcServer backend(FLAGS_backend_rpc_url);
   LOG (INFO)
       << "Forwarding calls to JSON-RPC server at " << FLAGS_backend_rpc_url;
-  std::istringstream methodsIn(FLAGS_methods);
-  while (methodsIn.good ())
+
+  const auto methods = charon::GetSelectedMethods ();
+  if (methods.empty ())
+    LOG (WARNING) << "No methods are selected for forwarding";
+  for (const auto& m : methods)
     {
-      std::string method;
-      std::getline (methodsIn, method, ',');
-      LOG (INFO) << "Allowing method: " << method;
-      backend.AllowMethod (method);
+      LOG (INFO) << "Allowing method: " << m;
+      backend.AllowMethod (m);
     }
 
   LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
