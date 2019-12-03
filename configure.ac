@@ -6,6 +6,7 @@ AC_CONFIG_HEADERS([config.h])
 
 AC_PROG_CXX
 AM_PROG_AR
+AM_PATH_PYTHON
 
 LT_INIT
 
@@ -36,7 +37,9 @@ PKG_CHECK_MODULES([GTEST], [gmock gtest_main])
 
 AC_CONFIG_FILES([
   Makefile \
-  src/Makefile
+  src/Makefile \
+  test/Makefile \
+  util/Makefile
 ])
 AC_OUTPUT
 
