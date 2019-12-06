@@ -21,12 +21,14 @@ libcharon_la_SOURCES = \
   rpcserver.cpp \
   server.cpp \
   stanzas.cpp \
+  waiterthread.cpp \
   xmppclient.cpp
 charon_HEADERS = \
   client.hpp \
   notifications.hpp \
   rpcserver.hpp \
-  server.hpp
+  server.hpp \
+  waiterthread.hpp
 noinst_HEADERS = \
   private/pubsub.hpp \
   private/stanzas.hpp \
@@ -50,6 +52,7 @@ tests_SOURCES = \
   rpcserver_tests.cpp \
   server_tests.cpp \
   stanzas_tests.cpp \
+  waiterthread_tests.cpp \
   xmppclient_tests.cpp
 check_HEADERS = \
   testutils.hpp \
