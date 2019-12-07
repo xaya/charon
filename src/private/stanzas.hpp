@@ -236,7 +236,7 @@ public:
 };
 
 /**
- * A gloox StanzaExtension representing a "pong" message:
+ * A gloox StanzaExtension representing a "pong" message/presence:
  *
  *  <pong xmlns="https://xaya.io/charon/" />
  */
