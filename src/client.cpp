@@ -24,9 +24,10 @@
 #include <gloox/error.h>
 #include <gloox/iq.h>
 #include <gloox/iqhandler.h>
-#include <gloox/message.h>
-#include <gloox/messagehandler.h>
 #include <gloox/jid.h>
+#include <gloox/message.h>
+#include <gloox/presence.h>
+#include <gloox/presencehandler.h>
 
 #include <jsonrpccpp/common/errors.h>
 
@@ -126,10 +127,14 @@ struct OngoingRpcCall
     /** The call is waiting for a server response.  */
     WAITING,
     /**
-     * The server replied with "service unavailable" and we should try
-     * to select another resource.
+     * The server replied with "service unavailable".  The RPC method
+     * corresponding to this request will fail with an internal error.
+     *
+     * Note that this is something that should rarely happen in practice, since
+     * we should have gotten the server's "unavailable" presence notification
+     * and reselected a server already when the current one goes away.
      */
-    RESELECT,
+    UNAVAILABLE,
     /** We have a response and it was success.  */
     RESPONSE_SUCCESS,
     /** We have a response and it was an error.  */
@@ -208,17 +213,15 @@ RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
     }
 
   /* If we get a "service unavailable" reply from the server, it means that
-     our selected server resource is no longer available and we should reselect
-     another one.  */
+     our selected server resource is no longer available.  */
   if (iq.subtype () == gloox::IQ::Error)
     {
       const auto* err = iq.error ();
       if (err != nullptr
             && err->error () == gloox::StanzaErrorServiceUnavailable)
         {
-          LOG (WARNING)
-              << "Service unavailable, we need to reselect the server JID";
-          call->state = OngoingRpcCall::State::RESELECT;
+          LOG (WARNING) << "Service unavailable";
+          call->state = OngoingRpcCall::State::UNAVAILABLE;
           call->cv.Notify ();
           return;
         }
@@ -269,7 +272,7 @@ RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
  * stuff that is dependent on gloox and other private libraries.
  */
 class Client::Impl : public XmppClient,
-                     private gloox::MessageHandler
+                     private gloox::PresenceHandler
 {
 
 private:
@@ -297,8 +300,7 @@ private:
    */
   std::weak_ptr<TimedConditionVariable> ongoingPing;
 
-  void handleMessage (const gloox::Message& msg,
-                      gloox::MessageSession* session) override;
+  void handlePresence (const gloox::Presence& p) override;
 
   /**
    * Returns true if we have a full server JID selected.
@@ -342,7 +344,7 @@ Client::Impl::Impl (Client& p, const gloox::JID& jid, const std::string& pwd)
       c.registerStanzaExtension (new PingMessage ());
       c.registerStanzaExtension (new PongMessage ());
 
-      c.registerMessageHandler (this);
+      c.registerPresenceHandler (this);
     });
 }
 
@@ -390,24 +392,51 @@ Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
 }
 
 void
-Client::Impl::handleMessage (const gloox::Message& msg,
-                             gloox::MessageSession* session)
+Client::Impl::handlePresence (const gloox::Presence& p)
 {
-  auto* ext = msg.findExtension<PongMessage> (PongMessage::EXT_TYPE);
-  if (ext != nullptr)
+  switch (p.subtype ())
     {
-      std::lock_guard<std::mutex> lock(mut);
+    case gloox::Presence::Available:
+      {
+        auto* ext = p.findExtension<PongMessage> (PongMessage::EXT_TYPE);
+        if (ext != nullptr)
+          {
+            std::lock_guard<std::mutex> lock(mut);
 
-      /* In case we get multiple replies, we pick the first only.  */
-      if (!HasFullServerJid ())
-        {
-          fullServerJid = msg.from ();
-          LOG (INFO) << "Found full server JID: " << fullServerJid.full ();
-        }
+            /* In case we get multiple replies, we pick the first only.  */
+            if (!HasFullServerJid ())
+              {
+                fullServerJid = p.from ();
+                LOG (INFO)
+                    << "Found full server JID: " << fullServerJid.full ();
 
-      auto ping = ongoingPing.lock ();
-      if (ping != nullptr)
-        ping->Notify ();
+                gloox::Presence resp(gloox::Presence::Available, p.from ());
+                RunWithClient ([&resp] (gloox::Client& c)
+                  {
+                    c.send (resp);
+                  });
+              }
+
+            auto ping = ongoingPing.lock ();
+            if (ping != nullptr)
+              ping->Notify ();
+          }
+        break;
+      }
+
+    case gloox::Presence::Unavailable:
+      {
+        std::lock_guard<std::mutex> lock(mut);
+        if (p.from () == fullServerJid)
+          {
+            LOG (WARNING) << "Our server has become unavailable";
+            fullServerJid = fullServerJid.bareJID ();
+          }
+        break;
+      }
+
+    default:
+      break;
     }
 }
 
@@ -465,13 +494,9 @@ Client::Impl::ForwardMethod (const std::string& method,
           LOG (INFO) << "Received error call result";
           throw call->error;
 
-        case OngoingRpcCall::State::RESELECT:
-          {
-            std::unique_lock<std::mutex> lock(mut);
-            if (fullServerJid == call->serverJid)
-              fullServerJid = fullServerJid.bareJID ();
-          }
-          return ForwardMethod (method, params);
+        case OngoingRpcCall::State::UNAVAILABLE:
+          throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                                  "selected server is unavailable");
 
         default:
           break;

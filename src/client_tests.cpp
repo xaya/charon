@@ -11,11 +11,15 @@
 
 #include <gloox/message.h>
 #include <gloox/messagehandler.h>
+#include <gloox/presence.h>
+#include <gloox/presencehandler.h>
 
 #include <gtest/gtest.h>
 
 #include <glog/logging.h>
 
+#include <condition_variable>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -33,7 +37,8 @@ namespace
  */
 class ClientServerDiscoveryTests : public testing::Test,
                                    private XmppClient,
-                                   private gloox::MessageHandler
+                                   private gloox::MessageHandler,
+                                   private gloox::PresenceHandler
 {
 
 protected:
@@ -42,6 +47,15 @@ protected:
   static constexpr auto PONG_DELAY = std::chrono::milliseconds (100);
 
 private:
+
+  /** Condition variable for waiting for the client's directed presence.  */
+  std::condition_variable cv;
+
+  /** Mutex for cv.  */
+  std::mutex mut;
+
+  /** Set to true when we receive presence from the client.  */
+  bool seenClientPresence = false;
 
   void
   handleMessage (const gloox::Message& msg,
@@ -54,7 +68,7 @@ private:
         std::this_thread::sleep_for (PONG_DELAY);
 
         LOG (INFO) << "Sleep done, sending pong now";
-        gloox::Message reply(gloox::Message::Normal, msg.from ());
+        gloox::Presence reply(gloox::Presence::Available, msg.from ());
         reply.addExtension (new PongMessage ());
 
         RunWithClient ([&reply] (gloox::Client& c)
@@ -62,6 +76,32 @@ private:
             c.send (reply);
           });
       }
+  }
+
+  void
+  handlePresence (const gloox::Presence& p) override
+  {
+    if (p.subtype () != gloox::Presence::Available)
+      {
+        LOG (WARNING) << "Ignoring non-available presence";
+        return;
+      }
+
+    if (p.from ().bareJID () != JIDWithoutResource (accClient)
+          || p.from ().resource ().empty ())
+      {
+        LOG (WARNING)
+            << "Ignoring presence not from our full client JID, but from "
+            << p.from ().full ();
+        return;
+      }
+
+    LOG (INFO)
+        << "Received directed presence from client " << p.from ().full ();
+
+    std::lock_guard<std::mutex> lock(mut);
+    seenClientPresence = true;
+    cv.notify_all ();
   }
 
 protected:
@@ -84,11 +124,23 @@ protected:
         c.registerStanzaExtension (new PongMessage ());
 
         c.registerMessageHandler (this);
+        c.registerPresenceHandler (this);
       });
 
     client.Connect (JIDWithoutResource (accClient).full (),
                     accClient.password, 0);
     Connect (0);
+  }
+
+  /**
+   * Wait for retrieving the client's presence (final part of the handshake).
+   */
+  void
+  ExpectClientPresence ()
+  {
+    std::unique_lock<std::mutex> lock(mut);
+    while (!seenClientPresence)
+      cv.wait (lock);
   }
 
 };
@@ -99,6 +151,7 @@ TEST_F (ClientServerDiscoveryTests, FindsServerResource)
 {
   client.SetTimeout (2 * PONG_DELAY);
   EXPECT_EQ (client.GetServerResource (), SERVER_RES);
+  ExpectClientPresence ();
 }
 
 TEST_F (ClientServerDiscoveryTests, Timeout)
@@ -121,6 +174,8 @@ TEST_F (ClientServerDiscoveryTests, MultipleThreads)
 
   for (auto& t : threads)
     t.join ();
+
+  ExpectClientPresence ();
 }
 
 /* ************************************************************************** */

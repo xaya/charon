@@ -25,6 +25,7 @@
 #include <gloox/iqhandler.h>
 #include <gloox/message.h>
 #include <gloox/messagehandler.h>
+#include <gloox/presence.h>
 
 #include <glog/logging.h>
 
@@ -85,7 +86,7 @@ Server::IqAnsweringClient::handleMessage (const gloox::Message& msg,
     {
       LOG (INFO) << "Processing ping from " << msg.from ().full ();
 
-      gloox::Message response(gloox::Message::Normal, msg.from ());
+      gloox::Presence response(gloox::Presence::Available, msg.from ());
       response.addExtension (new PongMessage ());
 
       RunWithClient ([&response] (gloox::Client& c)

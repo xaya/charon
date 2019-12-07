@@ -131,7 +131,7 @@ RpcRequest::RpcRequest (const gloox::Tag& t)
 const std::string&
 RpcRequest::filterString () const
 {
-  static const std::string filter = "/iq/request[@xmlns='" XMLNS "']";
+  static const std::string filter = "/*/request[@xmlns='" XMLNS "']";
   return filter;
 }
 
@@ -282,7 +282,7 @@ RpcResponse::GetErrorData () const
 const std::string&
 RpcResponse::filterString () const
 {
-  static const std::string filter = "/iq/response[@xmlns='" XMLNS "']";
+  static const std::string filter = "/*/response[@xmlns='" XMLNS "']";
   return filter;
 }
 
@@ -359,7 +359,7 @@ PingMessage::PingMessage ()
 const std::string&
 PingMessage::filterString () const
 {
-  static const std::string filter = "/message/ping[@xmlns='" XMLNS "']";
+  static const std::string filter = "/*/ping[@xmlns='" XMLNS "']";
   return filter;
 }
 
@@ -393,7 +393,7 @@ PongMessage::PongMessage ()
 const std::string&
 PongMessage::filterString () const
 {
-  static const std::string filter = "/message/pong[@xmlns='" XMLNS "']";
+  static const std::string filter = "/*/pong[@xmlns='" XMLNS "']";
   return filter;
 }
 

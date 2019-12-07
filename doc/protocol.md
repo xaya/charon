@@ -23,22 +23,31 @@ slightly out-of-sync when they process a new block.
 For this, the client initially sends an ordinary message stanza (not IQ)
 to the GSPs bare JID `gsp@server`, asking for a reply from a suitable instance:
 
-    <message>
+    <message to="gsp@server">
       <ping xmlns="https://xaya.io/charon/" />
     </message>
 
 This will then be relayed by the XMPP server to one or more available GSP
 connections (taking their priorities also into account).  A GSP client that
 receives such a message and feels ready to accept another client (i.e. is not
-overloaded) will reply with an acknowledgement:
+overloaded) will reply with a directed presence as acknowledgement:
 
-    <message>
+    <presence to="player@server/resource">
       <pong xmlns="https://xaya.io/charon/" />
-    </message>
+    </presence>
 
 The client can then select one of the replies it gets (in case there are
 multiple) and record the GSP client's full JID (including its resource)
-for further requests.
+for further requests.  Once a server is selected, the client will send
+a directed presence as well:
+
+    <presence to="gsp@server/resource" />
+
+By exchanging a pair of directed presence stanzas, the client and server
+will temporarily subscribe to each other's presence, so that they will also
+be notified about one becoming unavailable.
+(And then e.g. the client can perform another handshake to find a different
+server resource.)
 
 ## Ordinary RPC Calls
 

@@ -11,7 +11,8 @@
 #include <gloox/iq.h>
 #include <gloox/iqhandler.h>
 #include <gloox/message.h>
-#include <gloox/messagehandler.h>
+#include <gloox/presence.h>
+#include <gloox/presencehandler.h>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
@@ -158,7 +159,7 @@ constexpr const char* ServerTests::SERVER_RES;
 /**
  * Test case for the initial ping/pong recovery of the server full JID.
  */
-class ServerPingTests : public ServerTests, private gloox::MessageHandler
+class ServerPingTests : public ServerTests, private gloox::PresenceHandler
 {
 
 private:
@@ -173,18 +174,24 @@ private:
   std::string pongResource;
 
   void
-  handleMessage (const gloox::Message& msg,
-                 gloox::MessageSession* session) override
+  handlePresence (const gloox::Presence& p) override
   {
-    VLOG (1) << "Processing message from " << msg.from ().full ();
+    VLOG (1) << "Processing presence from " << p.from ().full ();
 
-    auto* ext = msg.findExtension (PongMessage::EXT_TYPE);
+    if (p.subtype () != gloox::Presence::Available)
+      {
+        LOG (INFO)
+            << "Ignoring non-available presence from " << p.from ().full ();
+        return;
+      }
+
+    auto* ext = p.findExtension (PongMessage::EXT_TYPE);
     if (ext != nullptr)
       {
-        LOG (INFO) << "Received pong from " << msg.from ().full ();
+        LOG (INFO) << "Received pong from " << p.from ().full ();
 
         std::lock_guard<std::mutex> lock(mut);
-        pongResource = msg.from ().resource ();
+        pongResource = p.from ().resource ();
         cv.notify_all ();
       }
   }
@@ -195,7 +202,7 @@ protected:
   {
     RunWithClient ([this] (gloox::Client& c)
       {
-        c.registerMessageHandler (this);
+        c.registerPresenceHandler (this);
       });
   }
 
