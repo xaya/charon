@@ -36,6 +36,9 @@ namespace charon
 /** XMPP server used for testing.  */
 extern const char* const XMPP_SERVER;
 
+/** Pubsub service at the server.  */
+extern const char* const PUBSUB_SERVICE;
+
 /**
  * Data for one of the test accounts that we use.
  */

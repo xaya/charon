@@ -18,6 +18,8 @@
 
 #include "private/xmppclient.hpp"
 
+#include "private/pubsub.hpp"
+
 #include <glog/logging.h>
 
 #include <chrono>
@@ -51,8 +53,27 @@ XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
 
 XmppClient::~XmppClient ()
 {
+  /* If we have a pubsub, disconnect that first, so that it can still use
+     the client to clean up nodes/subscriptions.  */
+  if (pubsub != nullptr)
+    pubsub.reset ();
+
   if (recvLoop != nullptr)
     Disconnect ();
+}
+
+void
+XmppClient::AddPubSub (const gloox::JID& service)
+{
+  LOG (INFO) << "Setting up pubsub at " << service.full ();
+  pubsub = std::make_unique<PubSubImpl> (*this, service);
+}
+
+PubSubImpl&
+XmppClient::GetPubSub ()
+{
+  CHECK (pubsub != nullptr);
+  return *pubsub;
 }
 
 void

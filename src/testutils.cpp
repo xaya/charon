@@ -31,6 +31,7 @@ namespace charon
 {
 
 const char* const XMPP_SERVER = "chat.xaya.io";
+const char* const PUBSUB_SERVICE = "pubsub.chat.xaya.io";
 
 /**
  * Our test accounts.  They are all set up for XID on mainnet, and the address
