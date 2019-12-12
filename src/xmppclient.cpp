@@ -44,10 +44,9 @@ XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
   client.logInstance ().registerLogHandler (gloox::LogLevelDebug,
                                             gloox::LogAreaAll, this);
 
-  /* FIXME:  For some reason, gloox and TLS does not connect to chat.xaya.io
-     successfully all the time.  Without TLS it works, so we do that for
-     initial development and testing.  But we need to figure this out.  */
-  client.setTls (gloox::TLSDisabled);
+  /* Make sure to enforce TLS (by default, we only allow TLS but also accept
+     a connection without TLS if necessary).  */
+  client.setTls (gloox::TLSRequired);
 }
 
 XmppClient::~XmppClient ()
