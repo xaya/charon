@@ -18,9 +18,14 @@
 
 #include "testutils.hpp"
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <glog/logging.h>
 
 #include <sstream>
+
+using testing::IsEmpty;
 
 namespace charon
 {
@@ -87,6 +92,33 @@ TestBackend::HandleMethod (const std::string& method, const Json::Value& params)
     throw Error (42, params[0].asString (), Json::Value ());
 
   LOG (FATAL) << "Unexpected method: " << method;
+}
+
+ReceivedMessages::~ReceivedMessages ()
+{
+  EXPECT_THAT (messages, IsEmpty ()) << "Unexpected messages received";
+}
+
+void
+ReceivedMessages::Add (const std::string& msg)
+{
+  std::lock_guard<std::mutex> lock(mut);
+  messages.push_back (msg);
+  cv.notify_all ();
+}
+
+void
+ReceivedMessages::Expect (const std::vector<std::string>& expected)
+{
+  std::unique_lock<std::mutex> lock(mut);
+  while (messages.size () < expected.size ())
+    {
+      LOG (INFO) << "Waiting for more messages to be received...";
+      cv.wait (lock);
+    }
+
+  EXPECT_EQ (messages, expected);
+  messages.clear ();
 }
 
 } // namespace charon

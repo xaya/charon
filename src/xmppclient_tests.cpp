@@ -24,12 +24,9 @@
 #include <gloox/messagehandler.h>
 
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
 
 #include <glog/logging.h>
 
-#include <condition_variable>
-#include <mutex>
 #include <vector>
 
 namespace charon
@@ -37,71 +34,7 @@ namespace charon
 namespace
 {
 
-using testing::IsEmpty;
-
 /* ************************************************************************** */
-
-/**
- * A queue of received messages, including a mechanism to synchronise adding
- * to the queue and waiting for expected messages to arrive.
- */
-class ReceivedMessages
-{
-
-private:
-
-  /** The messages themselves, as received in order.  */
-  std::vector<std::string> messages;
-
-  /**
-   * Mutex for synchronising the receiving messages and waiting for them
-   * when comparing to expectations.
-   */
-  std::mutex mut;
-
-  /** Condition variable for waiting for more messages.  */
-  std::condition_variable cv;
-
-public:
-
-  ReceivedMessages () = default;
-
-  ~ReceivedMessages ()
-  {
-    EXPECT_THAT (messages, IsEmpty ()) << "Unexpected messages received";
-  }
-
-  /**
-   * Adds a newly received message to the queue and potentially signals
-   * waiting threads.
-   */
-  void
-  Add (const std::string& msg)
-  {
-    std::lock_guard<std::mutex> lock(mut);
-    messages.push_back (msg);
-    cv.notify_all ();
-  }
-
-  /**
-   * Expects to receive the given messages in order.  Waits for them to
-   * arrive as needed, and clears out the message queue at the end.
-   */
-  void
-  Expect (const std::vector<std::string>& expected)
-  {
-    std::unique_lock<std::mutex> lock(mut);
-    while (messages.size () < expected.size ())
-      {
-        LOG (INFO) << "Waiting for more messages to be received...";
-        cv.wait (lock);
-      }
-
-    EXPECT_EQ (messages, expected);
-    messages.clear ();
-  }
-
-};
 
 /**
  * XMPP client connection for use in testing.  It can send messages and

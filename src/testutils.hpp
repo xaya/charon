@@ -25,7 +25,10 @@
 
 #include <json/json.h>
 
+#include <condition_variable>
+#include <mutex>
 #include <string>
+#include <vector>
 
 namespace charon
 {
@@ -80,6 +83,47 @@ public:
 
   Json::Value HandleMethod (const std::string& method,
                             const Json::Value& params) override;
+
+};
+
+/**
+ * A synchronised queue for received vs expected messages.  This can be used
+ * to add messages from some handler thread, and expect to receive a given
+ * set of messages from the test itself.
+ */
+class ReceivedMessages
+{
+
+private:
+
+  /** The messages themselves, as received in order.  */
+  std::vector<std::string> messages;
+
+  /**
+   * Mutex for synchronising the receiving messages and waiting for them
+   * when comparing to expectations.
+   */
+  std::mutex mut;
+
+  /** Condition variable for waiting for more messages.  */
+  std::condition_variable cv;
+
+public:
+
+  ReceivedMessages () = default;
+  ~ReceivedMessages ();
+
+  /**
+   * Adds a newly received message to the queue and potentially signals
+   * waiting threads.
+   */
+  void Add (const std::string& msg);
+
+  /**
+   * Expects to receive the given messages in order.  Waits for them to
+   * arrive as needed, and clears out the message queue at the end.
+   */
+  void Expect (const std::vector<std::string>& expected);
 
 };
 
