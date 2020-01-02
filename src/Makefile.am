@@ -16,6 +16,7 @@ libcharon_la_LIBADD = \
   $(GLOG_LIBS) $(GLOOX_LIBS)
 libcharon_la_SOURCES = \
   client.cpp \
+  notifications.cpp \
   pubsub.cpp \
   rpcserver.cpp \
   server.cpp \
@@ -23,6 +24,7 @@ libcharon_la_SOURCES = \
   xmppclient.cpp
 charon_HEADERS = \
   client.hpp \
+  notifications.hpp \
   rpcserver.hpp \
   server.hpp
 noinst_HEADERS = \
