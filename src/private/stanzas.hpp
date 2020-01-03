@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 
 #include <json/json.h>
 
+#include <map>
 #include <string>
 
 namespace charon
@@ -219,7 +220,7 @@ class PingMessage : public ValidatedStanzaExtension
 
 public:
 
-  /** Extension type for RPC request extensions.  */
+  /** Extension type for ping extensions.  */
   static constexpr int EXT_TYPE = gloox::ExtUser + 3;
 
   /**
@@ -245,7 +246,7 @@ class PongMessage : public ValidatedStanzaExtension
 
 public:
 
-  /** Extension type for RPC request extensions.  */
+  /** Extension type for pong extensions.  */
   static constexpr int EXT_TYPE = gloox::ExtUser + 4;
 
   /**
@@ -258,6 +259,153 @@ public:
   gloox::StanzaExtension* newInstance (const gloox::Tag* tag) const override;
   gloox::StanzaExtension* clone () const override;
   gloox::Tag* tag () const override;
+
+};
+
+/**
+ * Gloox StanzaExtension for the supported notifications and PubSub nodes
+ * of a Charon server (sent together with a pong presence):
+ *
+ *  <notifications xmlns="https://xaya.io/charon/" service="pubsub.service">
+ *    <notification type="state">node-state</notification>
+ *    <notification type="pending">node-pending</notification>
+ *  </notifications>
+ */
+class SupportedNotifications : public ValidatedStanzaExtension
+{
+
+private:
+
+  /** The indicated PubSub service.  */
+  std::string service;
+
+  /** Notification nodes keyed by the type string.  */
+  std::map<std::string, std::string> notifications;
+
+public:
+
+  /** Extension type for notifications data extensions.  */
+  static constexpr int EXT_TYPE = gloox::ExtUser + 5;
+
+  /**
+   * Constructs an empty instance (for use as factory).  It will be marked
+   * as invalid.
+   */
+  SupportedNotifications ();
+
+  /**
+   * Constructs an instance for the given service and (for now) an empty
+   * set of notifications.
+   */
+  explicit SupportedNotifications (const std::string& s);
+
+  /**
+   * Constructs an instance from a given tag.
+   */
+  explicit SupportedNotifications (const gloox::Tag& t);
+
+  /**
+   * Returns the PubSub service.
+   */
+  const std::string&
+  GetService () const
+  {
+    return service;
+  }
+
+  /**
+   * Returns the map of notification types to pubsub nodes.
+   */
+  const std::map<std::string, std::string>&
+  GetNotifications () const
+  {
+    return notifications;
+  }
+
+  /**
+   * Adds a notification type to the internal map.  The type must not yet be
+   * set, else this is an error.
+   */
+  void AddNotification (const std::string& type, const std::string& node);
+
+  const std::string& filterString () const override;
+  gloox::StanzaExtension* newInstance (const gloox::Tag* tag) const override;
+  gloox::StanzaExtension* clone () const override;
+  gloox::Tag* tag () const override;
+
+};
+
+/**
+ * Wrapper around an "update" payload for the notification items.  This is not
+ * exactly a StanzaExtension (as pubsub payloads are not handled by gloox
+ * in that way), but has a similar interface and usage.  The tag this
+ * represents looks like this:
+ *
+ *  <update xmlns="https://xaya.io/charon/" type="state">
+ *    JSON string of new state
+ *  </update>
+ */
+class NotificationUpdate
+{
+
+private:
+
+  /** Whether or not this is valid.  */
+  bool valid;
+
+  /** The update's type string.  */
+  std::string type;
+
+  /** The new JSON data.  */
+  Json::Value newState;
+
+public:
+
+  /**
+   * Constructs an instance for the given data.
+   */
+  explicit NotificationUpdate (const std::string& t, const Json::Value& s);
+
+  /**
+   * Constructs an instance by parsing the given tag.
+   */
+  explicit NotificationUpdate (const gloox::Tag& t);
+
+  NotificationUpdate () = delete;
+  NotificationUpdate (const NotificationUpdate&) = delete;
+  void operator= (const NotificationUpdate&) = delete;
+
+  /**
+   * Returns whether or not the data is valid.
+   */
+  bool
+  IsValid () const
+  {
+    return valid;
+  }
+
+  /**
+   * Returns the type string.
+   */
+  const std::string&
+  GetType () const
+  {
+    return type;
+  }
+
+  /**
+   * Returns the new JSON data / state.
+   */
+  const Json::Value&
+  GetState () const
+  {
+    return newState;
+  }
+
+  /**
+   * Serialises the object into a tag.
+   */
+  std::unique_ptr<gloox::Tag> CreateTag () const;
 
 };
 

@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -416,6 +416,153 @@ PongMessage::tag () const
   CHECK (res->setXmlns (XMLNS));
 
   return res.release ();
+}
+
+/* ************************************************************************** */
+
+SupportedNotifications::SupportedNotifications ()
+  : ValidatedStanzaExtension(EXT_TYPE)
+{
+  SetValid (false);
+}
+
+SupportedNotifications::SupportedNotifications (const std::string& s)
+  : ValidatedStanzaExtension(EXT_TYPE),
+    service(s)
+{
+  SetValid (true);
+}
+
+SupportedNotifications::SupportedNotifications (const gloox::Tag& t)
+  : ValidatedStanzaExtension(EXT_TYPE)
+{
+  SetValid (false);
+
+  service = t.findAttribute ("service");
+  if (service.empty ())
+    {
+      LOG (WARNING) << "Empty / missing pubsub service";
+      return;
+    }
+
+  for (const auto* child : t.findChildren ("notification"))
+    {
+      const std::string type = child->findAttribute ("type");
+      if (type.empty ())
+        {
+          LOG (WARNING) << "Empty / missing notification type";
+          continue;
+        }
+
+      const std::string node = child->cdata ();
+      if (node.empty ())
+        {
+          LOG (WARNING) << "Empty / missing node name for type " << type;
+          continue;
+        }
+
+      const auto res = notifications.emplace (type, node);
+      LOG_IF (WARNING, !res.second) << "Duplicate notification type: " << type;
+    }
+
+  SetValid (true);
+}
+
+void
+SupportedNotifications::AddNotification (const std::string& type,
+                                         const std::string& node)
+{
+  CHECK (!type.empty ());
+  CHECK (!node.empty ());
+
+  const auto res = notifications.emplace (type, node);
+  CHECK (res.second) << "Duplicate notification type: " << type;
+}
+
+const std::string&
+SupportedNotifications::filterString () const
+{
+  static const std::string filter = "/*/notifications[@xmlns='" XMLNS "']";
+  return filter;
+}
+
+gloox::StanzaExtension*
+SupportedNotifications::newInstance (const gloox::Tag* tag) const
+{
+  return new SupportedNotifications (*tag);
+}
+
+gloox::StanzaExtension*
+SupportedNotifications::clone () const
+{
+  auto res = std::make_unique<SupportedNotifications> ();
+
+  if (IsValid ())
+    {
+      res->service = service;
+      res->notifications = notifications;
+      res->SetValid (true);
+    }
+  else
+    res->SetValid (false);
+
+  return res.release ();
+}
+
+gloox::Tag*
+SupportedNotifications::tag () const
+{
+  CHECK (IsValid ()) << "Trying to serialise invalid SupportedNotifications";
+
+  auto res = std::make_unique<gloox::Tag> ("notifications");
+  CHECK (res->setXmlns (XMLNS));
+  CHECK (res->addAttribute ("service", service));
+
+  for (const auto& entry : notifications)
+    {
+      auto child = std::make_unique<gloox::Tag> ("notification", entry.second);
+      CHECK (child->addAttribute ("type", entry.first));
+      res->addChild (child.release ());
+    }
+
+  return res.release ();
+}
+
+/* ************************************************************************** */
+
+NotificationUpdate::NotificationUpdate (const std::string& t,
+                                        const Json::Value& s)
+  : valid(true), type(t), newState(s)
+{
+  CHECK (!type.empty ());
+}
+
+NotificationUpdate::NotificationUpdate (const gloox::Tag& t)
+  : valid(false)
+{
+  type = t.findAttribute ("type");
+  if (type.empty ())
+    {
+      LOG (WARNING) << "Empty / missing update type";
+      return;
+    }
+
+  if (!ParseJsonFromTag (t, newState))
+    return;
+
+  valid = true;
+}
+
+std::unique_ptr<gloox::Tag>
+NotificationUpdate::CreateTag () const
+{
+  CHECK (IsValid ()) << "Trying to serialise invalid NotificationUpdate";
+
+  auto res = SerialiseJsonToTag (newState, "update");
+  CHECK (res->setXmlns (XMLNS));
+  CHECK (res->addAttribute ("type", type));
+
+  return res;
 }
 
 /* ************************************************************************** */
