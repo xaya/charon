@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 
 #include "server.hpp"
 
+#include "private/pubsub.hpp"
 #include "private/stanzas.hpp"
 #include "private/xmppclient.hpp"
 
@@ -29,8 +30,90 @@
 
 #include <glog/logging.h>
 
+#include <map>
+
 namespace charon
 {
+
+namespace
+{
+
+/**
+ * An enabled notification on the server.  This mostly wraps the corresponding
+ * WaiterThread instance, but also has some more data like the pubsub node's
+ * name for updates.
+ */
+class ServerNotification
+{
+
+private:
+
+  /** The PubSubImpl we use to send notifications.  */
+  PubSubImpl& pubsub;
+
+  /** The PubSub node name.  */
+  std::string node;
+
+  /** The underlying WaiterThread doing most of the work.  */
+  std::unique_ptr<WaiterThread> thread;
+
+public:
+
+  /**
+   * Constructs a new instance, taking over the existing WaiterThread.  This
+   * also sets everything else up (pubsub node, update handler) and starts
+   * the waiter thread.
+   */
+  explicit ServerNotification (PubSubImpl& p, std::unique_ptr<WaiterThread> t);
+
+  /**
+   * Stops the waiter thread and cleans everything up.
+   */
+  ~ServerNotification ();
+
+  ServerNotification () = delete;
+  ServerNotification (const ServerNotification&) = delete;
+  void operator= (const ServerNotification&) = delete;
+
+  /**
+   * Returns the associated node string.
+   */
+  const std::string&
+  GetNode () const
+  {
+    return node;
+  }
+
+};
+
+ServerNotification::ServerNotification (PubSubImpl& p,
+                                        std::unique_ptr<WaiterThread> t)
+  : pubsub(p), thread(std::move (t))
+{
+  node = pubsub.CreateNode ();
+  LOG (INFO)
+      << "Serving notifications for " << thread->GetType ()
+      << " on PubSub node " << node;
+
+  thread->SetUpdateHandler ([this] (const Json::Value& data)
+    {
+      VLOG (1)
+          << "Notifying update for " << thread->GetType ()
+          << ":\n" << data;
+
+      const NotificationUpdate payload(thread->GetType (), data);
+      pubsub.Publish (node, payload.CreateTag ());
+    });
+
+  thread->Start ();
+}
+
+ServerNotification::~ServerNotification ()
+{
+  thread->Stop ();
+}
+
+} // anonymous namespace
 
 /**
  * The actual working class for our Charon server.  This uses XmppClient for
@@ -46,6 +129,9 @@ private:
   /** The backend server to use for answering requests.  */
   RpcServer& backend;
 
+  /** Active notification updaters.  They are keyed by type string.  */
+  std::map<std::string, std::unique_ptr<ServerNotification>> notifications;
+
   void handleMessage (const gloox::Message& msg,
                       gloox::MessageSession* session) override;
   bool handleIq (const gloox::IQ& iq) override;
@@ -55,6 +141,20 @@ public:
 
   explicit IqAnsweringClient (RpcServer& b, const gloox::JID& jid,
                               const std::string& password);
+
+  /**
+   * Removes all notifications (as preparation to shutting down).
+   */
+  void
+  ClearNotifications ()
+  {
+    notifications.clear ();
+  }
+
+  /**
+   * Adds a new notification updater and returns the pubsub node.
+   */
+  std::string AddNotification (std::unique_ptr<WaiterThread> upd);
 
 };
 
@@ -69,6 +169,7 @@ Server::IqAnsweringClient::IqAnsweringClient (RpcServer& b,
       c.registerStanzaExtension (new RpcResponse ());
       c.registerStanzaExtension (new PingMessage ());
       c.registerStanzaExtension (new PongMessage ());
+      c.registerStanzaExtension (new SupportedNotifications ());
 
       c.registerMessageHandler (this);
       c.registerIqHandler (this, RpcRequest::EXT_TYPE);
@@ -88,6 +189,19 @@ Server::IqAnsweringClient::handleMessage (const gloox::Message& msg,
 
       gloox::Presence response(gloox::Presence::Available, msg.from ());
       response.addExtension (new PongMessage ());
+
+      if (!notifications.empty ())
+        {
+          const auto service = GetPubSub ().GetService ().full ();
+          auto notificationInfo
+              = std::make_unique<SupportedNotifications> (service);
+
+          for (const auto& entry : notifications)
+            notificationInfo->AddNotification (entry.first,
+                                               entry.second->GetNode ());
+
+          response.addExtension (notificationInfo.release ());
+        }
 
       RunWithClient ([&response] (gloox::Client& c)
         {
@@ -152,6 +266,21 @@ void
 Server::IqAnsweringClient::handleIqID (const gloox::IQ& iq, const int context)
 {}
 
+std::string
+Server::IqAnsweringClient::AddNotification (std::unique_ptr<WaiterThread> upd)
+{
+  const auto type = upd->GetType ();
+
+  auto notifier
+      = std::make_unique<ServerNotification> (GetPubSub (), std::move (upd));
+  const auto node = notifier->GetNode ();
+
+  const auto res = notifications.emplace (type, std::move (notifier));
+  CHECK (res.second) << "Duplicate notification: " << type;
+
+  return node;
+}
+
 Server::Server (RpcServer& b)
   : backend(b)
 {}
@@ -168,13 +297,34 @@ Server::Connect (const std::string& jidStr, const std::string& password,
 }
 
 void
+Server::AddPubSub (const std::string& service)
+{
+  CHECK (client != nullptr);
+  CHECK (!hasPubSub);
+
+  const gloox::JID serviceJid(service);
+  client->AddPubSub (serviceJid);
+
+  hasPubSub = true;
+}
+
+void
 Server::Disconnect ()
 {
   if (client == nullptr)
     return;
 
+  client->ClearNotifications ();
   client->Disconnect ();
   client.reset ();
+}
+
+std::string
+Server::AddNotification (std::unique_ptr<WaiterThread> upd)
+{
+  CHECK (client != nullptr);
+  CHECK (hasPubSub);
+  return client->AddNotification (std::move (upd));
 }
 
 } // namespace charon

@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 
 #include "server.hpp"
 
+#include "private/pubsub.hpp"
 #include "private/stanzas.hpp"
 #include "private/xmppclient.hpp"
 #include "testutils.hpp"
@@ -43,6 +44,7 @@ namespace charon
 namespace
 {
 
+using testing::ElementsAre;
 using testing::IsEmpty;
 
 /* ************************************************************************** */
@@ -157,6 +159,7 @@ protected:
         c.registerStanzaExtension (new RpcResponse ());
         c.registerStanzaExtension (new PingMessage ());
         c.registerStanzaExtension (new PongMessage ());
+        c.registerStanzaExtension (new SupportedNotifications ());
       });
 
     server.Connect (JIDWithResource (accServer, SERVER_RES).full (),
@@ -187,6 +190,12 @@ private:
   /** Resource of the sender of pong.  */
   std::string pongResource;
 
+  /**
+   * The SupportedNotifications stanza that was present on the last received
+   * pong message (if any).
+   */
+  std::unique_ptr<SupportedNotifications> pongNotifications;
+
   void
   handlePresence (const gloox::Presence& p) override
   {
@@ -203,6 +212,13 @@ private:
     if (ext != nullptr)
       {
         LOG (INFO) << "Received pong from " << p.from ().full ();
+
+        auto* n = p.findExtension (SupportedNotifications::EXT_TYPE);
+        if (n == nullptr)
+          pongNotifications.reset ();
+        else
+          pongNotifications.reset (dynamic_cast<SupportedNotifications*> (
+              n->clone ()));
 
         std::lock_guard<std::mutex> lock(mut);
         pongResource = p.from ().resource ();
@@ -248,12 +264,46 @@ protected:
     return pongResource;
   }
 
+  /**
+   * Returns the SupportedNotifications stanza that was present on the last
+   * pong message (or null if there was none).
+   */
+  const SupportedNotifications*
+  GetNotifications () const
+  {
+    return pongNotifications.get ();
+  }
+
 };
 
 TEST_F (ServerPingTests, GetResource)
 {
   SendPing (JIDWithoutResource (accServer));
   EXPECT_EQ (WaitForPong (), SERVER_RES);
+  EXPECT_EQ (GetNotifications (), nullptr);
+}
+
+TEST_F (ServerPingTests, SupportedNotifications)
+{
+  UpdatableState upd;
+  server.AddPubSub (PUBSUB_SERVICE);
+  const auto node1 = server.AddNotification (upd.NewWaiter ("foo"));
+  const auto node2 = server.AddNotification (upd.NewWaiter ("bar"));
+
+  SendPing (JIDWithoutResource (accServer));
+  EXPECT_EQ (WaitForPong (), SERVER_RES);
+
+  const auto* n = GetNotifications ();
+  ASSERT_NE (n, nullptr);
+  EXPECT_EQ (n->GetService (), PUBSUB_SERVICE);
+  EXPECT_THAT (n->GetNotifications (), ElementsAre (
+    std::make_pair ("bar", node2),
+    std::make_pair ("foo", node1)
+  ));
+
+  /* We need to disconnect explicitly here to shut down the notifier waiting
+     threads before they go out of scope.  */
+  server.Disconnect ();
 }
 
 /* ************************************************************************** */
@@ -319,6 +369,131 @@ TEST_F (ServerRpcTests, MultipleRequests)
       {3, "baz"},
     }
   );
+}
+
+/* ************************************************************************** */
+
+/**
+ * Handler for receiving update notifications published by the server and
+ * entering them into a synchronised queue (so we can expect to receive them).
+ *
+ * The test JSON for updatable states is transformed to strings of the form
+ * "id=value" for the receiver queue.
+ */
+class NotificationReceiver : public ReceivedMessages
+{
+
+private:
+
+  /** Notification type we expect.  */
+  const std::string type;
+
+  /**
+   * Handles a received update.
+   */
+  void
+  HandleUpdate (const gloox::Tag& t)
+  {
+    const auto* updTag = t.findChild ("update");
+    if (updTag == nullptr)
+      {
+        LOG (WARNING)
+            << "Ignoring update without our payload:\n" << t.xml ();
+        return;
+      }
+
+    const NotificationUpdate upd(*updTag);
+    if (!upd.IsValid ())
+      {
+        LOG (WARNING)
+            << "Ignoring invalid payload update:\n" << t.xml ();
+        return;
+      }
+
+    ASSERT_EQ (upd.GetType (), type);
+
+    const std::string id = upd.GetState ()["id"].asString ();
+    const std::string value = upd.GetState ()["value"].asString ();
+
+    Add (id + "=" + value);
+  }
+
+public:
+
+  /**
+   * Creates a new receiver, which listens to the given node on the
+   * given XMPP client.  All received notifications must be for the given
+   * type of notification.
+   */
+  explicit NotificationReceiver (XmppClient& c, const std::string& t,
+                                 const std::string& node)
+    : type(t)
+  {
+    CHECK (c.GetPubSub ().SubscribeToNode (node, [this] (const gloox::Tag& t)
+      {
+        HandleUpdate (t);
+      }));
+  }
+
+};
+
+/**
+ * Test case for the update notifications sent by a server.
+ */
+class ServerNotificationTests : public ServerTests
+{
+
+protected:
+
+  ServerNotificationTests ()
+  {
+    AddPubSub (gloox::JID (PUBSUB_SERVICE));
+    server.AddPubSub (PUBSUB_SERVICE);
+  }
+
+};
+
+TEST_F (ServerNotificationTests, TwoNodes)
+{
+  UpdatableState s1, s2;
+  const auto node1 = server.AddNotification (s1.NewWaiter ("foo"));
+  const auto node2 = server.AddNotification (s2.NewWaiter ("bar"));
+
+  NotificationReceiver r1(*this, "foo", node1);
+  NotificationReceiver r2(*this, "bar", node2);
+
+  s1.SetState ("a", "1");
+  s2.SetState ("b", "2");
+  r1.Expect ({"a=1"});
+  r2.Expect ({"b=2"});
+
+  s1.SetState ("c", "3");
+  s2.SetState ("d", "4");
+  r1.Expect ({"c=3"});
+  r2.Expect ({"d=4"});
+
+  /* We need to stop the server explicitly to clean out the waiter threads
+     before the instances here go out of scope.  */
+  server.Disconnect ();
+}
+
+TEST_F (ServerNotificationTests, MultipleUpdates)
+{
+  UpdatableState s;
+  const auto node = server.AddNotification (s.NewWaiter ("foo"));
+  NotificationReceiver r(*this, "foo", node);
+
+  s.SetState ("a", "1");
+  std::this_thread::sleep_for (std::chrono::milliseconds (50));
+  s.SetState ("b", "2");
+  std::this_thread::sleep_for (std::chrono::milliseconds (50));
+  s.SetState ("c", "3");
+
+  r.Expect ({"a=1", "b=2", "c=3"});
+
+  /* We need to stop the server explicitly to clean out the waiter threads
+     before the instances here go out of scope.  */
+  server.Disconnect ();
 }
 
 /* ************************************************************************** */
