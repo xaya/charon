@@ -18,6 +18,7 @@
 
 #include "client.hpp"
 
+#include "private/pubsub.hpp"
 #include "private/stanzas.hpp"
 #include "private/xmppclient.hpp"
 
@@ -36,6 +37,8 @@
 #include <condition_variable>
 #include <mutex>
 #include <sstream>
+#include <thread>
+#include <vector>
 
 namespace charon
 {
@@ -43,8 +46,13 @@ namespace charon
 namespace
 {
 
+/* ************************************************************************** */
+
 /** Default timeout for the client.  */
 constexpr auto DEFAULT_TIMEOUT = std::chrono::seconds (3);
+
+/** Timeout for waitforchange calls on the client side.  */
+constexpr auto WAITFORCHANGE_TIMEOUT = std::chrono::seconds (5);
 
 /**
  * Abstraction of a started operation that times out after some time.  It also
@@ -112,6 +120,8 @@ public:
   }
 
 };
+
+/* ************************************************************************** */
 
 /**
  * Data for an ongoing RPC method call.
@@ -265,7 +275,135 @@ RpcResultHandler::handleIqID (const gloox::IQ& iq, const int context)
   call->cv.Notify ();
 }
 
+/* ************************************************************************** */
+
+/**
+ * The current state for some notification type.  This class keeps track of
+ * the known state, updates it when server notifications come in, and also is
+ * able to wait for changes (i.e. to implement RPC calls like waitforchange).
+ */
+class NotificationState
+{
+
+private:
+
+  /** NotificationType instance that we use.  */
+  const NotificationType& notification;
+
+  /** Mutex for this instance.  */
+  std::mutex mut;
+
+  /** Condition variable to wait for changes.  */
+  std::condition_variable cv;
+
+  /**
+   * Whether or not we have any state at all.  This is false initially, and
+   * set to true as soon as the "state" variable corresponds to a real state
+   * that we received somehow.
+   */
+  bool hasState = false;
+
+  /** The current state as JSON value.  */
+  Json::Value state;
+
+public:
+
+  /**
+   * Constructs a new instance for the given notification type.
+   */
+  explicit NotificationState (const NotificationType& n)
+    : notification(n)
+  {}
+
+  NotificationState () = delete;
+  NotificationState (const NotificationState&) = delete;
+  void operator= (const NotificationState&) = delete;
+
+  /**
+   * Waits (up to our predefined timeout) until the state changes.  Returns
+   * immediately if the current state does not match the given known ID.
+   */
+  Json::Value WaitForChange (const Json::Value& known);
+
+  /**
+   * Returns a pubsub ItemCallback that will set our state to the passed in
+   * new state and notify waiters.
+   */
+  PubSubImpl::ItemCallback GetItemCallback ();
+
+};
+
+Json::Value
+NotificationState::WaitForChange (const Json::Value& known)
+{
+  std::unique_lock<std::mutex> lock(mut);
+
+  if (hasState)
+    {
+      const auto stateId = notification.ExtractStateId (state);
+      if (known != stateId)
+        {
+          VLOG (1)
+              << "Current state ID " << stateId
+              << " does not match known " << known;
+          return state;
+        }
+    }
+
+  VLOG (1) << "Starting wait for " << notification.GetType () << "...";
+
+  cv.wait_for (lock, WAITFORCHANGE_TIMEOUT);
+  return state;
+}
+
+PubSubImpl::ItemCallback
+NotificationState::GetItemCallback ()
+{
+  return [this] (const gloox::Tag& t)
+    {
+      VLOG (1)
+          << "Processing update notification for " << notification.GetType ()
+          << ":\n" << t.xml ();
+
+      const auto* updTag = t.findChild ("update");
+      if (updTag == nullptr)
+        {
+          LOG (WARNING)
+              << "Ignoring update without our payload:\n" << t.xml ();
+          return;
+        }
+
+      const NotificationUpdate upd(*updTag);
+      if (!upd.IsValid ())
+        {
+          LOG (WARNING)
+              << "Ignoring invalid payload update:\n" << t.xml ();
+          return;
+        }
+
+      if (upd.GetType () != notification.GetType ())
+        {
+          LOG (WARNING)
+              << "Ignoring update for different type (got " << upd.GetType ()
+              << ", waiting for " << notification.GetType () << "):\n"
+              << t.xml ();
+          return;
+        }
+
+      std::lock_guard<std::mutex> lock(mut);
+      hasState = true;
+      state = upd.GetState ();
+
+      LOG (INFO) << "Found new state for " << notification.GetType ();
+      VLOG (1) << "New state:\n" << state;
+
+      cv.notify_all ();
+    };
+}
+
 } // anonymous namespace
+
+/* ************************************************************************** */
 
 /**
  * Main implementation logic for the Client class.  This holds all the
@@ -295,10 +433,22 @@ private:
   gloox::JID fullServerJid;
 
   /**
+   * Threads that are currently running pubsub subscriptions or have run some
+   * in the past.  We mostly just threads here that will finish by themselves
+   * and be joined in the destructor, although we also explicitly join them
+   * in some situations (e.g. when GetServerResource is called explicitly to
+   * force server selection).
+   */
+  std::vector<std::thread> subscribeCalls;
+
+  /**
    * If there is an on-going ping operation, then this holds a pointer to its
    * condition variable.
    */
   std::weak_ptr<TimedConditionVariable> ongoingPing;
+
+  /** Current states for all the enabled notifications.  */
+  std::map<std::string, std::unique_ptr<NotificationState>> states;
 
   void handlePresence (const gloox::Presence& p) override;
 
@@ -329,10 +479,20 @@ public:
   std::string GetServerResource ();
 
   /**
+   * Forces all ongoing node subscriptions to be finished.
+   */
+  void FinishSubscriptions ();
+
+  /**
    * Forwards the given RPC call to the server.
    */
   Json::Value ForwardMethod (const std::string& method,
                              const Json::Value& params);
+
+  /**
+   * Waits for a state change of the given notification type.
+   */
+  Json::Value WaitForChange (const std::string& type, const Json::Value& known);
 
 };
 
@@ -345,9 +505,17 @@ Client::Impl::Impl (Client& p, const gloox::JID& jid, const std::string& pwd)
       c.registerStanzaExtension (new RpcResponse ());
       c.registerStanzaExtension (new PingMessage ());
       c.registerStanzaExtension (new PongMessage ());
+      c.registerStanzaExtension (new SupportedNotifications ());
 
       c.registerPresenceHandler (this);
     });
+
+  for (const auto& entry : client.notifications)
+    {
+      auto n = std::make_unique<NotificationState> (*entry.second);
+      const auto res = states.emplace (entry.first, std::move (n));
+      CHECK (res.second);
+    }
 }
 
 Client::Impl::~Impl ()
@@ -356,6 +524,8 @@ Client::Impl::~Impl ()
     {
       c.removePresenceHandler (this);
     });
+
+  FinishSubscriptions ();
 }
 
 void
@@ -408,30 +578,89 @@ Client::Impl::handlePresence (const gloox::Presence& p)
     {
     case gloox::Presence::Available:
       {
-        auto* ext = p.findExtension<PongMessage> (PongMessage::EXT_TYPE);
-        if (ext != nullptr)
+        const auto* pong = p.findExtension<PongMessage> (PongMessage::EXT_TYPE);
+        if (pong == nullptr)
+          return;
+
+        const auto* sn = p.findExtension<SupportedNotifications> (
+            SupportedNotifications::EXT_TYPE);
+        for (const auto& entry : states)
           {
-            std::lock_guard<std::mutex> lock(mut);
-
-            /* In case we get multiple replies, we pick the first only.  */
-            if (!HasFullServerJid ())
+            if (sn == nullptr)
               {
-                fullServerJid = p.from ();
-                LOG (INFO)
-                    << "Found full server JID: " << fullServerJid.full ();
-
-                gloox::Presence resp(gloox::Presence::Available, p.from ());
-                RunWithClient ([&resp] (gloox::Client& c)
-                  {
-                    c.send (resp);
-                  });
+                LOG (WARNING)
+                    << "Server " << p.from ().full ()
+                    << " does not support notifications, ignoring";
+                return;
               }
 
-            auto ping = ongoingPing.lock ();
-            if (ping != nullptr)
-              ping->Notify ();
+            const auto& n = sn->GetNotifications ();
+            if (n.find (entry.first) == n.end ())
+              {
+                LOG (WARNING)
+                    << "Server " << p.from ().full ()
+                    << " does not support notification " << entry.first;
+                return;
+              }
           }
-        break;
+
+        std::lock_guard<std::mutex> lock(mut);
+
+        /* In case we get multiple replies, we pick the first only.  */
+        if (!HasFullServerJid ())
+          {
+            fullServerJid = p.from ();
+            LOG (INFO)
+                << "Found full server JID: " << fullServerJid.full ();
+
+            gloox::Presence resp(gloox::Presence::Available, p.from ());
+            RunWithClient ([&resp] (gloox::Client& c)
+              {
+                c.send (resp);
+              });
+
+            /* By adding the pubsub instance here to our client, we also
+               replace any existing one and make sure that it is connected
+               to the service indicated by the server.  */
+            if (!states.empty ())
+              {
+                CHECK (sn != nullptr);
+
+                /* Before recreating the pubsub instance, we have to make sure
+                   that all running calls to it are done to avoid any memory
+                   corruption and race conditions.  */
+                FinishSubscriptions ();
+
+                AddPubSub (sn->GetService ());
+
+                const auto& n = sn->GetNotifications ();
+                for (auto& entry : states)
+                  {
+                    const auto mit = n.find (entry.first);
+                    CHECK (mit != n.end ());
+
+                    const std::string node = mit->second;
+                    auto cb = entry.second->GetItemCallback ();
+
+                    LOG (INFO)
+                        << "Subscribing to node " << node
+                        << " for notification " << entry.first;
+
+                    /* The call to SubscribeToNode waits for the subscription
+                       response from the server, so we have to do it async.  */
+                    subscribeCalls.emplace_back ([this, node, cb] ()
+                      {
+                        GetPubSub ().SubscribeToNode (node, cb);
+                      });
+                  }
+              }
+          }
+
+        auto ping = ongoingPing.lock ();
+        if (ping != nullptr)
+          ping->Notify ();
+
+        return;
       }
 
     case gloox::Presence::Unavailable:
@@ -442,11 +671,11 @@ Client::Impl::handlePresence (const gloox::Presence& p)
             LOG (WARNING) << "Our server has become unavailable";
             fullServerJid = fullServerJid.bareJID ();
           }
-        break;
+        return;
       }
 
     default:
-      break;
+      return;
     }
 }
 
@@ -455,7 +684,18 @@ Client::Impl::GetServerResource ()
 {
   std::unique_lock<std::mutex> lock(mut);
   TryEnsureFullServerJid (lock);
+
+  FinishSubscriptions ();
+
   return fullServerJid.resource ();
+}
+
+void
+Client::Impl::FinishSubscriptions ()
+{
+  for (auto& t : subscribeCalls)
+    t.join ();
+  subscribeCalls.clear ();
 }
 
 Json::Value
@@ -523,6 +763,29 @@ Client::Impl::ForwardMethod (const std::string& method,
     }
 }
 
+Json::Value
+Client::Impl::WaitForChange (const std::string& type, const Json::Value& known)
+{
+  {
+    std::unique_lock<std::mutex> lock(mut);
+    TryEnsureFullServerJid (lock);
+
+    if (!HasFullServerJid ())
+      {
+        std::ostringstream msg;
+        msg << "could not discover full server JID for " << client.serverJid;
+        throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                                msg.str ());
+      }
+  }
+
+  const auto mit = states.find (type);
+  CHECK (mit != states.end ());
+  return mit->second->WaitForChange (known);
+}
+
+/* ************************************************************************** */
+
 Client::Client (const std::string& srv)
   : serverJid(srv)
 {
@@ -550,6 +813,15 @@ Client::Disconnect ()
   impl.reset ();
 }
 
+void
+Client::AddNotification (std::unique_ptr<NotificationType> n)
+{
+  CHECK (impl == nullptr);
+  const auto type = n->GetType ();
+  const auto res = notifications.emplace (type, std::move (n));
+  CHECK (res.second) << "Duplicate notification type added: " << type;
+}
+
 std::string
 Client::GetServerResource ()
 {
@@ -563,5 +835,16 @@ Client::ForwardMethod (const std::string& method, const Json::Value& params)
   CHECK (impl != nullptr);
   return impl->ForwardMethod (method, params);
 }
+
+Json::Value
+Client::WaitForChange (const std::string& type, const Json::Value& known)
+{
+  CHECK (impl != nullptr);
+  CHECK (notifications.find (type) != notifications.end ())
+      << "Notification type not enabled: " << type;
+  return impl->WaitForChange (type, known);
+}
+
+/* ************************************************************************** */
 
 } // namespace charon
