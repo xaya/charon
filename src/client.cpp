@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -321,6 +321,8 @@ public:
 
   explicit Impl (Client& c, const gloox::JID& jid, const std::string& pwd);
 
+  ~Impl ();
+
   /**
    * Returns the server's resource and tries to find one if none is there.
    */
@@ -345,6 +347,14 @@ Client::Impl::Impl (Client& p, const gloox::JID& jid, const std::string& pwd)
       c.registerStanzaExtension (new PongMessage ());
 
       c.registerPresenceHandler (this);
+    });
+}
+
+Client::Impl::~Impl ()
+{
+  RunWithClient ([this] (gloox::Client& c)
+    {
+      c.removePresenceHandler (this);
     });
 }
 
