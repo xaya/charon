@@ -81,6 +81,12 @@ public:
    */
   virtual Json::Value ExtractStateId (const Json::Value& fullState) const = 0;
 
+  /**
+   * Should return the state ID value that indicates that WaitForChange should
+   * always block (i.e. that there is no currently known state).
+   */
+  virtual Json::Value AlwaysBlockId () const = 0;
+
 };
 
 /**
@@ -97,6 +103,7 @@ public:
   {}
 
   Json::Value ExtractStateId (const Json::Value& fullState) const override;
+  Json::Value AlwaysBlockId () const override;
 
 };
 
@@ -114,6 +121,7 @@ public:
   {}
 
   Json::Value ExtractStateId (const Json::Value& fullState) const override;
+  Json::Value AlwaysBlockId () const override;
 
 };
 

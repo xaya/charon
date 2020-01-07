@@ -31,6 +31,12 @@ StateChangeNotification::ExtractStateId (const Json::Value& fullState) const
 }
 
 Json::Value
+StateChangeNotification::AlwaysBlockId () const
+{
+  return "";
+}
+
+Json::Value
 PendingChangeNotification::ExtractStateId (const Json::Value& fullState) const
 {
   CHECK (fullState.isObject ());
@@ -39,6 +45,12 @@ PendingChangeNotification::ExtractStateId (const Json::Value& fullState) const
   CHECK (version.isUInt ());
 
   return version;
+}
+
+Json::Value
+PendingChangeNotification::AlwaysBlockId () const
+{
+  return 0;
 }
 
 } // namespace charon

@@ -338,7 +338,7 @@ NotificationState::WaitForChange (const Json::Value& known)
 {
   std::unique_lock<std::mutex> lock(mut);
 
-  if (hasState)
+  if (hasState && known != notification.AlwaysBlockId ())
     {
       const auto stateId = notification.ExtractStateId (state);
       if (known != stateId)

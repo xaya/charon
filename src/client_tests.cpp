@@ -551,6 +551,32 @@ TEST_F (ClientNotificationTests, WaitForChange)
   s.reset ();
 }
 
+TEST_F (ClientNotificationTests, AlwaysBlock)
+{
+  ConnectClient ({"foo"});
+
+  auto s = ConnectServer ();
+  s->AddPubSub (PUBSUB_SERVICE);
+
+  UpdatableState upd;
+  s->AddNotification (upd.NewWaiter ("foo"));
+
+  /* Force subscriptions to be finalised by now.  */
+  client.GetServerResource ();
+
+  upd.SetState ("a", "first");
+
+  auto w = CallWaitForChange ("foo", "x");
+  w->Expect ("a", "first");
+
+  w = CallWaitForChange ("foo", "always block");
+  w->ExpectRunning ();
+  upd.SetState ("b", "second");
+  w->Expect ("b", "second");
+
+  s.reset ();
+}
+
 TEST_F (ClientNotificationTests, TwoNotifications)
 {
   ConnectClient ({"foo", "bar"});

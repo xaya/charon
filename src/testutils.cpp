@@ -176,6 +176,12 @@ UpdatableState::Notification::ExtractStateId (
 }
 
 Json::Value
+UpdatableState::Notification::AlwaysBlockId () const
+{
+  return "always block";
+}
+
+Json::Value
 UpdatableState::GetStateJson (const std::string& id, const std::string& value)
 {
   Json::Value res(Json::objectValue);

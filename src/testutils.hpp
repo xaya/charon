@@ -204,6 +204,7 @@ public:
   {}
 
   Json::Value ExtractStateId (const Json::Value& fullState) const override;
+  Json::Value AlwaysBlockId () const override;
 
 };
 
