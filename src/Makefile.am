@@ -19,6 +19,7 @@ libcharon_la_SOURCES = \
   notifications.cpp \
   pubsub.cpp \
   rpcserver.cpp \
+  rpcwaiter.cpp \
   server.cpp \
   stanzas.cpp \
   waiterthread.cpp \
@@ -27,6 +28,7 @@ charon_HEADERS = \
   client.hpp \
   notifications.hpp \
   rpcserver.hpp \
+  rpcwaiter.hpp \
   server.hpp \
   waiterthread.hpp
 noinst_HEADERS = \
@@ -50,6 +52,7 @@ tests_SOURCES = \
   client_tests.cpp \
   pubsub_tests.cpp \
   rpcserver_tests.cpp \
+  rpcwaiter_tests.cpp \
   server_tests.cpp \
   stanzas_tests.cpp \
   waiterthread_tests.cpp \
