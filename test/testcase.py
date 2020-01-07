@@ -1,5 +1,5 @@
 #   Charon - a transport system for GSP data
-#   Copyright (C) 2019  Autonomous Worlds Ltd
+#   Copyright (C) 2019-2020  Autonomous Worlds Ltd
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -45,6 +45,7 @@ TEST_ACCOUNTS = [
                 "4C4OpqSlTpx8OG6xtFjCUMLh/AGA=="),
 ]
 XMPP_SERVER = "chat.xaya.io"
+PUBSUB = "pubsub.chat.xaya.io"
 
 
 class Fixture (object):
@@ -132,7 +133,7 @@ class Fixture (object):
     with rpcserver.Server (("localhost", port), obj), \
          charonbin.Server (self.basedir, binary, self.methods, backend,
                            self.getAccountJid (TEST_ACCOUNTS[0]),
-                           TEST_ACCOUNTS[0][1]):
+                           TEST_ACCOUNTS[0][1], PUBSUB):
       yield
 
   def assertEqual (self, a, b):

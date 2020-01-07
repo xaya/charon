@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -23,6 +23,8 @@
 #include "client.hpp"
 
 #include <json/json.h>
+#include <jsonrpccpp/common/errors.h>
+#include <jsonrpccpp/common/exception.h>
 #include <jsonrpccpp/server.h>
 #include <jsonrpccpp/server/connectors/httpserver.h>
 
@@ -33,6 +35,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -45,6 +48,10 @@ DEFINE_string (client_jid, "", "Bare or full JID for the client");
 DEFINE_string (password, "", "XMPP password for the client JID");
 
 DEFINE_int32 (port, 0, "Port for the local JSON-RPC server");
+
+DEFINE_bool (waitforchange, false, "If true, enable waitforchange updates");
+DEFINE_bool (waitforpendingchange, false,
+             "If true, enable waitforpendingchange updates");
 
 DEFINE_bool (detect_server, true,
              "Whether to run server detection immediately on start");
@@ -60,6 +67,12 @@ private:
 
   /** Charon client to forward to.  */
   charon::Client& client;
+
+  /**
+   * Waiter methods that are supported, with the corresponding notification
+   * "type" string that should be passed to Client::WaitForChange.
+   */
+  std::unordered_map<std::string, std::string> notifications;
 
   /** Mutex for stopping.  */
   std::mutex mut;
@@ -125,6 +138,17 @@ public:
   }
 
   /**
+   * Enables a notification waiter method with the given RPC name.
+   */
+  void
+  AddNotification (const std::string& method, const charon::NotificationType& n)
+  {
+    const auto res = notifications.emplace (method, n.GetType ());
+    CHECK (res.second) << "Duplicate notification method: " << method;
+    AddMethod (method);
+  }
+
+  /**
    * Listens on the server until the stop notification is sent.
    */
   void
@@ -146,7 +170,21 @@ public:
   HandleMethodCall (jsonrpc::Procedure& proc, const Json::Value& params,
                     Json::Value& result) override
   {
-    result = client.ForwardMethod (proc.GetProcedureName (), params);
+    const std::string method = proc.GetProcedureName ();
+
+    const auto mit = notifications.find (method);
+    if (mit != notifications.end ())
+      {
+        if (!params.isArray () || params.size () != 1)
+          throw jsonrpc::JsonRpcException (
+              jsonrpc::Errors::ERROR_RPC_INVALID_PARAMS,
+              "wait method expects a single positional argument");
+
+        result = client.WaitForChange (mit->second, params[0]);
+        return;
+      }
+
+    result = client.ForwardMethod (method, params);
   }
 
 };
@@ -182,6 +220,34 @@ main (int argc, char** argv)
   LOG (INFO) << "Using " << FLAGS_server_jid << " as server";
   charon::Client client(FLAGS_server_jid);
 
+  LOG (INFO) << "Listening for local RPCs on port " << FLAGS_port;
+  jsonrpc::HttpServer httpServer(FLAGS_port);
+  httpServer.BindLocalhost ();
+
+  LocalServer rpcServer(httpServer, client);
+
+  const auto methods = charon::GetSelectedMethods ();
+  if (methods.empty ())
+    LOG (WARNING) << "No methods are selected for forwarding";
+  for (const auto& m : methods)
+    {
+      LOG (INFO) << "Forwarding method: " << m;
+      rpcServer.AddMethod (m);
+    }
+
+  if (FLAGS_waitforchange)
+    {
+      auto n = std::make_unique<charon::StateChangeNotification> ();
+      rpcServer.AddNotification ("waitforchange", *n);
+      client.AddNotification (std::move (n));
+    }
+  if (FLAGS_waitforpendingchange)
+    {
+      auto n = std::make_unique<charon::PendingChangeNotification> ();
+      rpcServer.AddNotification ("waitforpendingchange", *n);
+      client.AddNotification (std::move (n));
+    }
+
   LOG (INFO) << "Connecting client to XMPP as " << FLAGS_client_jid;
   client.Connect (FLAGS_client_jid, FLAGS_password, -1);
 
@@ -197,21 +263,6 @@ main (int argc, char** argv)
     }
   else
     LOG (WARNING) << "Not detecting server for now";
-
-  LOG (INFO) << "Listening for local RPCs on port " << FLAGS_port;
-  jsonrpc::HttpServer httpServer(FLAGS_port);
-  httpServer.BindLocalhost ();
-
-  LocalServer rpcServer(httpServer, client);
-
-  const auto methods = charon::GetSelectedMethods ();
-  if (methods.empty ())
-    LOG (WARNING) << "No methods are selected for forwarding";
-  for (const auto& m : methods)
-    {
-      LOG (INFO) << "Forwarding method: " << m;
-      rpcServer.AddMethod (m);
-    }
 
   LOG (INFO) << "Starting RPC server...";
   rpcServer.Run ();

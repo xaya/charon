@@ -1,5 +1,6 @@
 REGTESTS = \
-  basic_calls.py
+  basic_calls.py \
+  waitforchange.py
 
 noinst_PYTHON = $(REGTESTS) \
   charonbin.py \
