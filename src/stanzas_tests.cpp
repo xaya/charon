@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 #include "testutils.hpp"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <glog/logging.h>
@@ -30,6 +31,9 @@ namespace charon
 {
 namespace
 {
+
+using testing::ElementsAre;
+using testing::IsEmpty;
 
 /**
  * Performs a "roundtrip" of serialising and parsing the given StanzaExtension.
@@ -140,6 +144,74 @@ TEST_F (RpcResponseTests, ErrorOnlyCode)
   EXPECT_EQ (recreated->GetErrorCode (), -10);
   EXPECT_EQ (recreated->GetErrorMessage (), "");
   EXPECT_EQ (recreated->GetErrorData (), Json::Value ());
+}
+
+/* ************************************************************************** */
+
+using SupportedNotificationsTests = testing::Test;
+
+TEST_F (SupportedNotificationsTests, NoNotifications)
+{
+  SupportedNotifications original("pubsub service");
+  auto recreated = ExtensionRoundtrip (original);
+
+  ASSERT_TRUE (recreated->IsValid ());
+  EXPECT_EQ (recreated->GetService (), "pubsub service");
+  EXPECT_THAT (recreated->GetNotifications (), IsEmpty ());
+}
+
+TEST_F (SupportedNotificationsTests, WithNotifications)
+{
+  SupportedNotifications original("pubsub service");
+  original.AddNotification ("state", "state node");
+  original.AddNotification ("pending", "pending node");
+  auto recreated = ExtensionRoundtrip (original);
+
+  ASSERT_TRUE (recreated->IsValid ());
+  EXPECT_EQ (recreated->GetService (), "pubsub service");
+  EXPECT_THAT (recreated->GetNotifications (), ElementsAre (
+    std::make_pair ("pending", "pending node"),
+    std::make_pair ("state", "state node")
+  ));
+}
+
+/* ************************************************************************** */
+
+class NotificationUpdateTests : public testing::Test
+{
+
+protected:
+
+  /**
+   * Runs a roundtrip test (serialisation and parsing) for the given type
+   * and JSON state.
+   */
+  void
+  TestRoundtrip (const std::string& type, const Json::Value& state)
+  {
+    const NotificationUpdate original(type, state);
+    const NotificationUpdate recreated(*original.CreateTag ());
+
+    ASSERT_TRUE (recreated.IsValid ());
+    ASSERT_EQ (recreated.GetType (), type);
+    ASSERT_EQ (recreated.GetState (), state);
+  }
+
+};
+
+TEST_F (NotificationUpdateTests, StringData)
+{
+  const Json::Value data("JSON <string>");
+  TestRoundtrip ("state", data);
+}
+
+TEST_F (NotificationUpdateTests, ObjectData)
+{
+  Json::Value data(Json::objectValue);
+  data["foo"] = "bar";
+  data["baz"] = 42;
+
+  TestRoundtrip ("pending", data);
 }
 
 /* ************************************************************************** */

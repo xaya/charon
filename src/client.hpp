@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,11 +19,13 @@
 #ifndef CHARON_CLIENT_HPP
 #define CHARON_CLIENT_HPP
 
+#include "notifications.hpp"
 #include "rpcserver.hpp"
 
 #include <json/json.h>
 
 #include <chrono>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -50,6 +52,12 @@ private:
 
   /** Current timeout when waiting for replies of the server JID.  */
   Duration timeout;
+
+  /**
+   * Notification types that we should listen to.  This is the place where
+   * the instances are held and owned.
+   */
+  std::map<std::string, std::unique_ptr<NotificationType>> notifications;
 
   /**
    * The class implementing the main logic.  Its internals depend on private
@@ -96,6 +104,12 @@ public:
   void Disconnect ();
 
   /**
+   * Adds a new notification type that we are interested in.  This must only be
+   * called before the client is connected.
+   */
+  void AddNotification (std::unique_ptr<NotificationType> n);
+
+  /**
    * Tries to find a full server JID if there is not already one.  This
    * performs the initial ping/pong handshake if not already done.
    * Returns the server's resource if one could be found or an empty string
@@ -115,6 +129,17 @@ public:
    */
   Json::Value ForwardMethod (const std::string& method,
                              const Json::Value& params);
+
+  /**
+   * Waits for a state change of the given notification.  Returns immediately
+   * if the passed-in known state does not match the actual current state.
+   * The method will also return eventually even if no state change has
+   * happened.
+   *
+   * If no state is known yet and the call times out before one becomes
+   * published by the server, this function may also return JSON null.
+   */
+  Json::Value WaitForChange (const std::string& type, const Json::Value& known);
 
 };
 

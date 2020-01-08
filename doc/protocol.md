@@ -94,3 +94,54 @@ again as serialised JSON).
 **Note:**  Even for a JSON-RPC *error*, the IQ type is `result`.  IQ `error`s
 would indicate an issue with the transport over XMPP, not a successful
 transport but an error from the JSON-RPC call.
+
+## Update Subscriptions
+
+In addition to ordinary calls to get some state, GSPs also support
+notifying a client for updates.  In particular, this is what is
+behind the `waitforchange` and `waitforpendingchange` long-poll RPC methods.
+Methods like that are supported specifically by Charon, by means of its
+own subscription model based on
+[XEP-0060 (PubSub)](https://xmpp.org/extensions/xep-0060.html).
+
+When a server supports broadcasting updates of a certain type (e.g.
+for the game state or pending moves), it creates one node per notification
+type with its XMPP pubsub service.  Let's say the nodes are `node-state` and
+`node-pending`, and the service is `pubsub.server`.
+
+In this case, the server includes the notifications it supports in any "pong"
+presence sent to a newly connected client (in addition to the `pong` tag):
+
+    <presence to="player@server/resource">
+      <pong xmlns="https://xaya.io/charon/" />
+      <notifications xmlns="https://xaya.io/charon/" service="pubsub.service">
+        <notification type="state">node-state</notification>
+        <notification type="pending">node-pending</notification>
+      </notifications>
+    </presence>
+
+Also, whenever the server detects an update to one of the states it provides
+subscription notifications for, it publishes to the corresponding pubsub node
+with a payload that contains the updated value as JSON data (in the same way
+it is returned from the `waitfor*` RPC method):
+
+    <item>
+      <update xmlns="https://xaya.io/charon/" type="state">
+        "NEW BEST BLOCK HASH"
+      </update>
+    </item>
+
+    <item>
+      <update xmlns="https://xaya.io/charon/" type="pending">
+        {
+          "version": 42,
+          "pending": {"foo": "bar"}
+        }
+      </update>
+    </item>
+
+The Charon client, when it needs support for a particular RPC method like
+`waitforchange`, will select a server that announces a pubsub node for the
+required type.  It will then subscribe to updates on that node, and use this
+to keep its own "copy" of the current state.  From that, it can handle
+RPC methods just like an ordinary GSP would.

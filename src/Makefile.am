@@ -16,15 +16,23 @@ libcharon_la_LIBADD = \
   $(GLOG_LIBS) $(GLOOX_LIBS)
 libcharon_la_SOURCES = \
   client.cpp \
+  notifications.cpp \
+  pubsub.cpp \
   rpcserver.cpp \
+  rpcwaiter.cpp \
   server.cpp \
   stanzas.cpp \
+  waiterthread.cpp \
   xmppclient.cpp
 charon_HEADERS = \
   client.hpp \
+  notifications.hpp \
   rpcserver.hpp \
-  server.hpp
+  rpcwaiter.hpp \
+  server.hpp \
+  waiterthread.hpp
 noinst_HEADERS = \
+  private/pubsub.hpp \
   private/stanzas.hpp \
   private/xmppclient.hpp
 
@@ -42,9 +50,12 @@ tests_SOURCES = \
   testutils.cpp \
   \
   client_tests.cpp \
+  pubsub_tests.cpp \
   rpcserver_tests.cpp \
+  rpcwaiter_tests.cpp \
   server_tests.cpp \
   stanzas_tests.cpp \
+  waiterthread_tests.cpp \
   xmppclient_tests.cpp
 check_HEADERS = \
   testutils.hpp \

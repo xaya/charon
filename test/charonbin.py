@@ -1,5 +1,5 @@
 #   Charon - a transport system for GSP data
-#   Copyright (C) 2019  Autonomous Worlds Ltd
+#   Copyright (C) 2019-2020  Autonomous Worlds Ltd
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -70,6 +70,7 @@ class Client ():
     args.extend (["--server_jid", self.serverJid])
     args.extend (["--password", self.password])
     args.extend (["--methods", ",".join (self.methods)])
+    args.extend (["--waitforchange"])
 
     envVars = dict (os.environ)
     envVars["GLOG_log_dir"] = self.basedir
@@ -85,7 +86,7 @@ class Client ():
     assert self.proc is not None
 
     self.log.info ("Stopping charon-client process...")
-    self.rpc._notify.stop ()
+    self.proc.terminate ()
     self.proc.wait ()
     self.proc = None
 
@@ -104,7 +105,7 @@ class Server ():
   """
 
   def __init__ (self, basedir, binary, methods, backendRpcUrl,
-                serverJid, password):
+                serverJid, password, pubsub):
     """
     Constructs the manager, which will run the charon-server binary located
     at the given path, setting its log directory and other variables as given.
@@ -118,6 +119,7 @@ class Server ():
     self.backendRpcUrl = backendRpcUrl
     self.serverJid = serverJid
     self.password = password
+    self.pubsub = pubsub
 
     self.proc = None
 
@@ -130,7 +132,9 @@ class Server ():
     args.extend (["--backend_rpc_url", self.backendRpcUrl])
     args.extend (["--server_jid", self.serverJid])
     args.extend (["--password", self.password])
+    args.extend (["--pubsub_service", self.pubsub])
     args.extend (["--methods", ",".join (self.methods)])
+    args.extend (["--waitforchange"])
 
     envVars = dict (os.environ)
     envVars["GLOG_log_dir"] = self.basedir

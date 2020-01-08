@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 
 #include <glog/logging.h>
 
+#include <chrono>
 #include <sstream>
 
 using testing::IsEmpty;
@@ -30,7 +31,10 @@ using testing::IsEmpty;
 namespace charon
 {
 
+/* ************************************************************************** */
+
 const char* const XMPP_SERVER = "chat.xaya.io";
+const char* const PUBSUB_SERVICE = "pubsub.chat.xaya.io";
 
 /**
  * Our test accounts.  They are all set up for XID on mainnet, and the address
@@ -78,6 +82,8 @@ ParseJson (const std::string& str)
   return res;
 }
 
+/* ************************************************************************** */
+
 Json::Value
 TestBackend::HandleMethod (const std::string& method, const Json::Value& params)
 {
@@ -93,6 +99,8 @@ TestBackend::HandleMethod (const std::string& method, const Json::Value& params)
 
   LOG (FATAL) << "Unexpected method: " << method;
 }
+
+/* ************************************************************************** */
 
 ReceivedMessages::~ReceivedMessages ()
 {
@@ -120,5 +128,85 @@ ReceivedMessages::Expect (const std::vector<std::string>& expected)
   EXPECT_EQ (messages, expected);
   messages.clear ();
 }
+
+/* ************************************************************************** */
+
+/**
+ * UpdateWaiter implementation for the UpdatableState.
+ */
+class UpdatableState::Waiter : public UpdateWaiter
+{
+
+private:
+
+  /** The underlying state.  */
+  UpdatableState& ref;
+
+public:
+
+  explicit Waiter (UpdatableState& s)
+    : ref(s)
+  {}
+
+  bool
+  WaitForUpdate (Json::Value& newState) override
+  {
+    std::unique_lock<std::mutex> lock(ref.mut);
+
+    ++ref.waitCounter;
+    if (ref.waitCounter % 2 == 0)
+      return false;
+
+    ref.cv.wait_for (lock, std::chrono::milliseconds (10));
+
+    newState = ref.state;
+    return !ref.state.isNull ();
+  }
+
+};
+
+Json::Value
+UpdatableState::Notification::ExtractStateId (
+    const Json::Value& fullState) const
+{
+  CHECK (fullState.isObject ());
+  const auto& id = fullState["id"];
+  CHECK (id.isString ());
+  return id;
+}
+
+Json::Value
+UpdatableState::Notification::AlwaysBlockId () const
+{
+  return "always block";
+}
+
+Json::Value
+UpdatableState::GetStateJson (const std::string& id, const std::string& value)
+{
+  Json::Value res(Json::objectValue);
+  res["id"] = id;
+  res["value"] = value;
+
+  return res;
+}
+
+void
+UpdatableState::SetState (const std::string& id, const std::string& value)
+{
+  LOG (INFO) << "Setting new state: " << id << ", " << value;
+  std::lock_guard<std::mutex> lock(mut);
+  state = GetStateJson (id, value);
+  cv.notify_all ();
+}
+
+std::unique_ptr<WaiterThread>
+UpdatableState::NewWaiter (const std::string& type)
+{
+  return std::make_unique<WaiterThread> (std::make_unique<Notification> (type),
+                                         std::make_unique<Waiter> (*this));
+}
+
+/* ************************************************************************** */
 
 } // namespace charon

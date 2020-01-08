@@ -32,6 +32,8 @@
 namespace charon
 {
 
+class PubSubImpl;
+
 /**
  * Basic XMPP client, based on the gloox library.  It manages the connection
  * and logs, but does not have any specific listening or other logic by itself.
@@ -50,6 +52,9 @@ private:
 
   /** The gloox XMPP client instance.  */
   gloox::Client client;
+
+  /** PubSub instance used by this client.  */
+  std::unique_ptr<PubSubImpl> pubsub;
 
   /**
    * When connected, this is the thread running polling for new messages.
@@ -83,6 +88,8 @@ private:
   void handleLog (gloox::LogLevel level, gloox::LogArea area,
                   const std::string& msg) override;
 
+  friend class PubSubImpl;
+
 public:
 
   /**
@@ -99,6 +106,17 @@ public:
   XmppClient () = delete;
   XmppClient (const XmppClient&) = delete;
   void operator= (const XmppClient&) = delete;
+
+  /**
+   * Adds a pubsub handler for the given pubsub service JID.
+   */
+  void AddPubSub (const gloox::JID& service);
+
+  /**
+   * Gives access to the pubsub instance.  Must only be called if one was
+   * initialised with AddPubSub already.
+   */
+  PubSubImpl& GetPubSub ();
 
   /**
    * Sets up the connection to the server, using the specified priority.

@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@
 
 #include <glog/logging.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -229,9 +230,9 @@ public:
 };
 
 /**
- * Tests basic forwarding of RPC method calls with a Charon client.
+ * Test fixture that has a real Charon client and server.
  */
-class ClientRpcForwardingTests : public testing::Test
+class ClientTestWithServer : public testing::Test
 {
 
 private:
@@ -245,8 +246,15 @@ protected:
 
   Client client;
 
-  ClientRpcForwardingTests ()
+  ClientTestWithServer ()
     : client(JIDWithoutResource (accServer).bare ())
+  {}
+
+  /**
+   * Connects the client.
+   */
+  void
+  ConnectClient ()
   {
     client.Connect (JIDWithoutResource (accClient).full (),
                     accClient.password, 0);
@@ -256,12 +264,27 @@ protected:
    * Sets up a server connection.
    */
   std::unique_ptr<Server>
-  ConnectServer ()
+  ConnectServer (const std::string& ressource="")
   {
     auto res = std::make_unique<Server> (backend);
-    res->Connect (JIDWithoutResource (accServer).bare (),
+    res->Connect (JIDWithResource (accServer, ressource).full (),
                   accServer.password, 0);
     return res;
+  }
+
+};
+
+/**
+ * Tests basic forwarding of RPC method calls with a Charon client.
+ */
+class ClientRpcForwardingTests : public ClientTestWithServer
+{
+
+protected:
+
+  ClientRpcForwardingTests ()
+  {
+    ConnectClient ();
   }
 
 };
@@ -346,6 +369,307 @@ TEST_F (ClientRpcForwardingTests, ServerReselectionNotAvailable)
   client.SetTimeout (std::chrono::milliseconds (100));
   EXPECT_THROW (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")),
                 RpcServer::Error);
+}
+
+/* ************************************************************************** */
+
+/**
+ * Asynchronous call to WaitForChange in a test.  This is essentially a future
+ * whose result we can expect as needed.
+ */
+class WaitForChangeCall
+{
+
+private:
+
+  /** The thread doing the actual call.  */
+  std::unique_ptr<std::thread> caller;
+
+  /** Set to true when the thread is done.  */
+  std::atomic<bool> done;
+
+  /** The call's result (if any).  */
+  Json::Value res;
+
+public:
+
+  /**
+   * Constructs a new instance, which will call WaitForChange on the given
+   * client with the given arguments.
+   */
+  explicit WaitForChangeCall (Client& c, const std::string& type,
+                              const Json::Value& known)
+  {
+    done = false;
+    caller = std::make_unique<std::thread> ([=, &c] ()
+      {
+        res = c.WaitForChange (type, known);
+        done = true;
+      });
+  }
+
+  WaitForChangeCall () = delete;
+  WaitForChangeCall (const WaitForChangeCall&) = delete;
+  void operator= (const WaitForChangeCall&) = delete;
+
+  /**
+   * Before the object is destroyed, the result must be awaited / expected.
+   */
+  ~WaitForChangeCall ()
+  {
+    CHECK (caller == nullptr) << "Call result not awaited";
+  }
+
+  /**
+   * Expects that the call is not yet done.
+   */
+  void
+  ExpectRunning ()
+  {
+    std::this_thread::sleep_for (std::chrono::milliseconds (100));
+    ASSERT_FALSE (done);
+  }
+
+  /**
+   * Waits for the result to be in and asserts that it matches the expected
+   * JSON value.
+   */
+  void
+  Expect (const Json::Value& expected)
+  {
+    caller->join ();
+    caller.reset ();
+
+    ASSERT_EQ (res, expected);
+  }
+
+  /**
+   * Waits for the result to be in and asserts that it matches the expected
+   * id and value.
+   */
+  void
+  Expect (const std::string& id, const std::string& value)
+  {
+    Expect (UpdatableState::GetStateJson (id, value));
+  }
+
+};
+
+/**
+ * Tests notification updates in the client.
+ */
+class ClientNotificationTests : public ClientTestWithServer
+{
+
+protected:
+
+  /**
+   * Connects the client and enables notifications with the given types
+   * before doing so.
+   */
+  void
+  ConnectClient (const std::vector<std::string>& types)
+  {
+    for (const auto& t : types)
+      client.AddNotification (
+          std::make_unique<UpdatableState::Notification> (t));
+    ClientTestWithServer::ConnectClient ();
+  }
+
+  /**
+   * Calls WaitForChange on the client and returns the call handle.
+   */
+  std::unique_ptr<WaitForChangeCall>
+  CallWaitForChange (const std::string& type, const Json::Value& known)
+  {
+    return std::make_unique<WaitForChangeCall> (client, type, known);
+  }
+
+};
+
+TEST_F (ClientNotificationTests, SelectsServerWithNotifications)
+{
+  ConnectClient ({"foo", "bar"});
+  client.SetTimeout (std::chrono::milliseconds (100));
+
+  auto s1 = ConnectServer ("nothing");
+  auto s2 = ConnectServer ("service only");
+  s2->AddPubSub (PUBSUB_SERVICE);
+  auto s3 = ConnectServer ("partial notifications");
+  s3->AddPubSub (PUBSUB_SERVICE);
+
+  UpdatableState upd;
+  s3->AddNotification (upd.NewWaiter ("foo"));
+  s3->AddNotification (upd.NewWaiter ("baz"));
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (100));
+  EXPECT_EQ (client.GetServerResource (), "");
+
+  auto s4 = ConnectServer ("good");
+  s4->AddPubSub (PUBSUB_SERVICE);
+  s4->AddNotification (upd.NewWaiter ("foo"));
+  s4->AddNotification (upd.NewWaiter ("bar"));
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (100));
+  EXPECT_EQ (client.GetServerResource (), "good");
+
+  /* Disconnect servers before the UpdatableState goes out of scope.  */
+  s1.reset ();
+  s2.reset ();
+  s3.reset ();
+  s4.reset ();
+}
+
+TEST_F (ClientNotificationTests, WaitForChange)
+{
+  ConnectClient ({"foo"});
+
+  auto s = ConnectServer ();
+  s->AddPubSub (PUBSUB_SERVICE);
+
+  UpdatableState upd;
+  s->AddNotification (upd.NewWaiter ("foo"));
+
+  /* Force subscriptions to be finalised by now.  */
+  client.GetServerResource ();
+
+  auto w = CallWaitForChange ("foo", "");
+  w->ExpectRunning ();
+
+  upd.SetState ("a", "first");
+  w->Expect ("a", "first");
+
+  w = CallWaitForChange ("foo", "x");
+  w->Expect ("a", "first");
+
+  w = CallWaitForChange ("foo", "a");
+  w->ExpectRunning ();
+
+  upd.SetState ("b", "second");
+  w->Expect ("b", "second");
+
+  s.reset ();
+}
+
+TEST_F (ClientNotificationTests, AlwaysBlock)
+{
+  ConnectClient ({"foo"});
+
+  auto s = ConnectServer ();
+  s->AddPubSub (PUBSUB_SERVICE);
+
+  UpdatableState upd;
+  s->AddNotification (upd.NewWaiter ("foo"));
+
+  /* Force subscriptions to be finalised by now.  */
+  client.GetServerResource ();
+
+  upd.SetState ("a", "first");
+
+  auto w = CallWaitForChange ("foo", "x");
+  w->Expect ("a", "first");
+
+  w = CallWaitForChange ("foo", "always block");
+  w->ExpectRunning ();
+  upd.SetState ("b", "second");
+  w->Expect ("b", "second");
+
+  s.reset ();
+}
+
+TEST_F (ClientNotificationTests, TwoNotifications)
+{
+  ConnectClient ({"foo", "bar"});
+
+  auto s = ConnectServer ();
+  s->AddPubSub (PUBSUB_SERVICE);
+
+  UpdatableState upd1;
+  s->AddNotification (upd1.NewWaiter ("foo"));
+  UpdatableState upd2;
+  s->AddNotification (upd2.NewWaiter ("bar"));
+
+  client.GetServerResource ();
+
+  auto w1 = CallWaitForChange ("foo", "");
+  auto w2 = CallWaitForChange ("bar", "");
+
+  w1->ExpectRunning ();
+  upd1.SetState ("a", "first");
+  w1->Expect ("a", "first");
+
+  w2->ExpectRunning ();
+  upd2.SetState ("a", "second");
+  w2->Expect ("a", "second");
+
+  s.reset ();
+}
+
+TEST_F (ClientNotificationTests, TwoServers)
+{
+  ConnectClient ({"foo"});
+
+  auto s1 = ConnectServer ("srv1");
+  s1->AddPubSub (PUBSUB_SERVICE);
+  UpdatableState upd1;
+  s1->AddNotification (upd1.NewWaiter ("foo"));
+
+  ASSERT_EQ (client.GetServerResource (), "srv1");
+
+  auto s2 = ConnectServer ("srv2");
+  s2->AddPubSub (PUBSUB_SERVICE);
+  UpdatableState upd2;
+  s2->AddNotification (upd1.NewWaiter ("foo"));
+
+  auto w = CallWaitForChange ("foo", "always block");
+  upd2.SetState ("a", "wrong");
+  w->ExpectRunning ();
+  upd1.SetState ("a", "correct");
+  w->Expect ("a", "correct");
+
+  s1.reset ();
+  s2.reset ();
+}
+
+TEST_F (ClientNotificationTests, ServerReselection)
+{
+  ConnectClient ({"foo"});
+
+  UpdatableState upd;
+
+  auto s = ConnectServer ("srv1");
+  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddNotification (upd.NewWaiter ("foo"));
+
+  EXPECT_EQ (client.GetServerResource (), "srv1");
+  auto w = CallWaitForChange ("foo", "");
+
+  s = ConnectServer ("srv2");
+  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddNotification (upd.NewWaiter ("foo"));
+
+  /* Note that reselection only happens when an explicit action triggers it.
+     We do this by selecting (and checking) the server resource again.  */
+  EXPECT_EQ (client.GetServerResource (), "srv2");
+
+  w->ExpectRunning ();
+  upd.SetState ("a", "value");
+  w->Expect ("a", "value");
+
+  /* Try again.  This time we trigger reselection through the call itself,
+     and only use GetServerResource to force all subscriptions to be done
+     before updating the server state.  */
+  s = ConnectServer ("srv3");
+  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddNotification (upd.NewWaiter ("foo"));
+
+  w = CallWaitForChange ("foo", "always block");
+  EXPECT_EQ (client.GetServerResource (), "srv3");
+  w->ExpectRunning ();
+  upd.SetState ("b", "value 2");
+  w->Expect ("b", "value 2");
+
+  s.reset ();
 }
 
 /* ************************************************************************** */

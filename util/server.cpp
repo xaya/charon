@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,8 +20,11 @@
 
 #include "methods.hpp"
 
+#include "notifications.hpp"
 #include "rpcserver.hpp"
+#include "rpcwaiter.hpp"
 #include "server.hpp"
+#include "waiterthread.hpp"
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -29,6 +32,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 namespace
@@ -40,6 +44,27 @@ DEFINE_string (backend_rpc_url, "",
 DEFINE_string (server_jid, "", "Bare or full JID for the server");
 DEFINE_string (password, "", "XMPP password for the server JID");
 DEFINE_int32 (priority, 0, "Priority for the XMPP connection");
+
+DEFINE_string (pubsub_service, "", "The pubsub service to use on the server");
+
+DEFINE_bool (waitforchange, false, "If true, enable waitforchange updates");
+DEFINE_bool (waitforpendingchange, false,
+             "If true, enable waitforpendingchange updates");
+
+/**
+ * Constructs a WaiterThread instance for the given notification type, using
+ * the given RPC method as long-polling backend call.
+ */
+template <typename Notification>
+  std::unique_ptr<charon::WaiterThread>
+  NewWaiter (const std::string& method)
+{
+  auto n = std::make_unique<Notification> ();
+  auto w = std::make_unique<charon::RpcUpdateWaiter> (
+      FLAGS_backend_rpc_url, method, n->AlwaysBlockId ());
+
+  return std::make_unique<charon::WaiterThread> (std::move (n), std::move (w));
+}
 
 } // anonymous namespace
 
@@ -79,6 +104,27 @@ main (int argc, char** argv)
   LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
   charon::Server srv(backend);
   srv.Connect (FLAGS_server_jid, FLAGS_password, FLAGS_priority);
+
+  if (FLAGS_pubsub_service.empty ())
+    {
+      if (FLAGS_waitforchange || FLAGS_waitforpendingchange)
+        {
+          std::cerr
+              << "Error: Notifications are enabled"
+              << " but no pubsub service is defined"
+              << std::endl;
+          return EXIT_FAILURE;
+        }
+    }
+  else
+    srv.AddPubSub (FLAGS_pubsub_service);
+
+  if (FLAGS_waitforchange)
+    srv.AddNotification (NewWaiter<charon::StateChangeNotification> (
+        "waitforchange"));
+  if (FLAGS_waitforpendingchange)
+    srv.AddNotification (NewWaiter<charon::PendingChangeNotification> (
+        "waitforpendingchange"));
 
   while (true)
     std::this_thread::sleep_for (std::chrono::seconds (1));
