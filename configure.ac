@@ -7,6 +7,7 @@ AC_CONFIG_HEADERS([config.h])
 AC_PROG_CXX
 AM_PROG_AR
 AM_PATH_PYTHON
+PKG_INSTALLDIR
 
 LT_INIT
 
@@ -39,7 +40,9 @@ AC_CONFIG_FILES([
   Makefile \
   src/Makefile \
   test/Makefile \
-  util/Makefile
+  util/Makefile \
+  \
+  charon.pc
 ])
 AC_OUTPUT
 
