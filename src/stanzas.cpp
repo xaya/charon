@@ -20,7 +20,6 @@
 
 #include <glog/logging.h>
 
-#include <memory>
 #include <sstream>
 
 namespace charon

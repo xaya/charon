@@ -25,6 +25,7 @@
 #include <json/json.h>
 
 #include <map>
+#include <memory>
 #include <string>
 
 namespace charon
