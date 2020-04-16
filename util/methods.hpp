@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -26,7 +26,8 @@ namespace charon
 {
 
 /**
- * Returns the set of methods selected by --methods.
+ * Returns the set of methods selected by the corresponding command-line
+ * arguments.
  */
 std::set<std::string> GetSelectedMethods ();
 

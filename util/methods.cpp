@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,7 +20,9 @@
 
 #include <gflags/gflags.h>
 
+#include <algorithm>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 
 namespace charon
@@ -30,25 +32,44 @@ namespace
 {
 
 DEFINE_string (methods, "", "Comma-separated list of supported RPC methods");
+DEFINE_string (methods_exclude, "",
+               "Comma-separated list of methods to exclude");
+
+/**
+ * Parses a comma-separated string into pieces.
+ */
+std::set<std::string>
+ParseCommaSeparated (const std::string& lst)
+{
+  if (lst.empty ())
+    return {};
+
+  std::set<std::string> res;
+  std::istringstream in(lst);
+  while (in.good ())
+    {
+      std::string cur;
+      std::getline (in, cur, ',');
+      res.insert (cur);
+    }
+
+  return res;
+}
 
 } // anonymous namespace
 
 std::set<std::string>
 GetSelectedMethods ()
 {
-  if (FLAGS_methods.empty ())
-    return {};
+  const auto methods = ParseCommaSeparated (FLAGS_methods);
+  const auto excluded = ParseCommaSeparated (FLAGS_methods_exclude);
 
-  std::set<std::string> res;
-  std::istringstream methodsIn(FLAGS_methods);
-  while (methodsIn.good ())
-    {
-      std::string method;
-      std::getline (methodsIn, method, ',');
-      res.insert (method);
-    }
+  std::set<std::string> diff;
+  std::set_difference (methods.begin (), methods.end (),
+                       excluded.begin (), excluded.end (),
+                       std::inserter (diff, diff.begin ()));
 
-  return res;
+  return diff;
 }
 
 } // namespace charon

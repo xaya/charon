@@ -1,5 +1,6 @@
 REGTESTS = \
   basic_calls.py \
+  method_selection.py \
   waitforchange.py
 
 noinst_PYTHON = $(REGTESTS) \
