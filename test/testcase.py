@@ -105,7 +105,7 @@ class Fixture (object):
 
     logging.shutdown ()
 
-  def runClient (self):
+  def runClient (self, methods=None, extraArgs=[]):
     """
     Returns a context manager for running a Charon client in our environment.
     """
@@ -113,13 +113,17 @@ class Fixture (object):
     binary = os.path.join (self.bindir, "charon-client")
     port = self.getNextPort ()
 
-    return charonbin.Client (self.basedir, binary, port, self.methods,
+    if methods is None:
+      methods = self.methods
+
+    return charonbin.Client (self.basedir, binary, port, methods,
                              self.getAccountJid (TEST_ACCOUNTS[0]),
                              self.getAccountJid (TEST_ACCOUNTS[1]),
-                             TEST_ACCOUNTS[1][1])
+                             TEST_ACCOUNTS[1][1],
+                             extraArgs)
 
   @contextmanager
-  def runServer (self, obj):
+  def runServer (self, obj, methods=None, extraArgs=[]):
     """
     Returns a context manager for running a Charon server in our environment.
     It will start a fresh JSON-RPC server as backend, exposing all the members
@@ -130,10 +134,14 @@ class Fixture (object):
     port = self.getNextPort ()
     backend = "http://localhost:%d" % port
 
+    if methods is None:
+      methods = self.methods
+
     with rpcserver.Server (("localhost", port), obj), \
-         charonbin.Server (self.basedir, binary, self.methods, backend,
+         charonbin.Server (self.basedir, binary, methods, backend,
                            self.getAccountJid (TEST_ACCOUNTS[0]),
-                           TEST_ACCOUNTS[0][1], PUBSUB):
+                           TEST_ACCOUNTS[0][1], PUBSUB,
+                           extraArgs):
       yield
 
   def assertEqual (self, a, b):

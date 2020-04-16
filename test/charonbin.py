@@ -39,7 +39,8 @@ class Client ():
   """
 
   def __init__ (self, basedir, binary, port, methods,
-                serverJid, clientJid, password):
+                serverJid, clientJid, password,
+                extraArgs):
     """
     Constructs the manager, which will run the charon-client binary located
     at the given path, setting its log directory and JSON-RPC port as provided.
@@ -54,6 +55,7 @@ class Client ():
     self.serverJid = serverJid
     self.clientJid = clientJid
     self.password = password
+    self.extraArgs = extraArgs
 
     self.rpcurl = "http://localhost:%d" % port
     self.proc = None
@@ -71,6 +73,7 @@ class Client ():
     args.extend (["--password", self.password])
     args.extend (["--methods", ",".join (self.methods)])
     args.extend (["--waitforchange"])
+    args.extend (self.extraArgs)
 
     envVars = dict (os.environ)
     envVars["GLOG_log_dir"] = self.basedir
@@ -105,7 +108,8 @@ class Server ():
   """
 
   def __init__ (self, basedir, binary, methods, backendRpcUrl,
-                serverJid, password, pubsub):
+                serverJid, password, pubsub,
+                extraArgs):
     """
     Constructs the manager, which will run the charon-server binary located
     at the given path, setting its log directory and other variables as given.
@@ -120,6 +124,7 @@ class Server ():
     self.serverJid = serverJid
     self.password = password
     self.pubsub = pubsub
+    self.extraArgs = extraArgs
 
     self.proc = None
 
@@ -135,6 +140,7 @@ class Server ():
     args.extend (["--pubsub_service", self.pubsub])
     args.extend (["--methods", ",".join (self.methods)])
     args.extend (["--waitforchange"])
+    args.extend (self.extraArgs)
 
     envVars = dict (os.environ)
     envVars["GLOG_log_dir"] = self.basedir

@@ -1,5 +1,6 @@
 REGTESTS = \
   basic_calls.py \
+  method_selection.py \
   waitforchange.py
 
 noinst_PYTHON = $(REGTESTS) \
@@ -8,3 +9,4 @@ noinst_PYTHON = $(REGTESTS) \
   testcase.py
 
 TESTS = $(REGTESTS)
+EXTRA_DIST = testspec.json
