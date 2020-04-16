@@ -9,3 +9,4 @@ noinst_PYTHON = $(REGTESTS) \
   testcase.py
 
 TESTS = $(REGTESTS)
+EXTRA_DIST = testspec.json

@@ -19,8 +19,12 @@
 #include "methods.hpp"
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include <json/json.h>
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <sstream>
@@ -34,6 +38,8 @@ namespace
 DEFINE_string (methods, "", "Comma-separated list of supported RPC methods");
 DEFINE_string (methods_exclude, "",
                "Comma-separated list of methods to exclude");
+DEFINE_string (methods_json_spec, "",
+               "If specified, load methods from the given JSON file");
 
 /**
  * Parses a comma-separated string into pieces.
@@ -56,16 +62,57 @@ ParseCommaSeparated (const std::string& lst)
   return res;
 }
 
+/**
+ * Tries to parse methods from the libjson-rpc-cpp stubgenerator JSON
+ * file.
+ */
+std::set<std::string>
+GetJsonMethods ()
+{
+  if (FLAGS_methods_json_spec.empty ())
+    return {};
+
+  std::ifstream in(FLAGS_methods_json_spec);
+  CHECK (in) << "Failed to open JSON spec file " << FLAGS_methods_json_spec;
+  LOG (INFO) << "Loading JSON specification file " << FLAGS_methods_json_spec;
+
+  Json::Value spec;
+  in >> spec;
+  CHECK (spec.isArray ()) << "Invalid JSON specification: " << spec;
+
+  std::set<std::string> res;
+  for (const auto& entry : spec)
+    {
+      CHECK (entry.isObject ()) << "Invalid spec entry: " << entry;
+      const std::string name = entry["name"].asString ();
+      if (entry.isMember ("returns"))
+        {
+          LOG (INFO) << "Using method " << name << " from JSON spec";
+          res.insert (name);
+        }
+      else
+        LOG (INFO) << "Ignoring notification " << name;
+    }
+
+  return res;
+}
+
 } // anonymous namespace
 
 std::set<std::string>
 GetSelectedMethods ()
 {
   const auto methods = ParseCommaSeparated (FLAGS_methods);
+  const auto fromJson = GetJsonMethods ();
   const auto excluded = ParseCommaSeparated (FLAGS_methods_exclude);
 
+  std::set<std::string> allMethods;
+  std::set_union (methods.begin (), methods.end (),
+                  fromJson.begin (), fromJson.end (),
+                  std::inserter (allMethods, allMethods.begin ()));
+
   std::set<std::string> diff;
-  std::set_difference (methods.begin (), methods.end (),
+  std::set_difference (allMethods.begin (), allMethods.end (),
                        excluded.begin (), excluded.end (),
                        std::inserter (diff, diff.begin ()));
 

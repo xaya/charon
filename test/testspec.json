@@ -1,0 +1,14 @@
+[
+  {
+    "name": "echo",
+    "params": [10],
+    "returns": 10
+  },
+  {
+    "name": "doNotCall",
+    "params":
+      {
+        "value": 10
+      }
+  }
+]

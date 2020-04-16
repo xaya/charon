@@ -22,6 +22,9 @@ Tests the method-selection args for the utility binaries.
 
 import testcase
 
+import os
+import os.path
+
 
 class Methods:
 
@@ -58,3 +61,10 @@ with testcase.Fixture ([]) as t:
 
   t.mainLogger.info ("With --methods and --methods_exclude...")
   test (t, ["echo", "doNotCall"], ["--methods_exclude", "doNotCall"])
+
+  t.mainLogger.info ("JSON specification...")
+  srcDir = os.getenv ("srcdir")
+  if not srcDir:
+    srcDir = "."
+  specFile = os.path.join (srcDir, "testspec.json")
+  test (t, [], ["--methods_json_spec", specFile])
