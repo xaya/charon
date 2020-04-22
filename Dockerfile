@@ -26,4 +26,5 @@ RUN ./autogen.sh && ./configure && make && make install
 # For the final image, just copy over all built / installed stuff.
 FROM xaya/libxayagame
 COPY --from=build /usr/local /usr/local/
+RUN ldconfig
 LABEL description="Debian-based image that includes Charon and libxayagame for Xaya development."
