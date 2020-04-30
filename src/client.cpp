@@ -579,8 +579,16 @@ Client::Impl::handlePresence (const gloox::Presence& p)
     case gloox::Presence::Available:
       {
         const auto* pong = p.findExtension<PongMessage> (PongMessage::EXT_TYPE);
-        if (pong == nullptr)
+        if (pong == nullptr || !pong->IsValid ())
           return;
+        if (pong->GetVersion () != client.version)
+          {
+            LOG (WARNING)
+                << "Server " << p.from ().full ()
+                << " reported version " << pong->GetVersion ()
+                << " while we want " << client.version;
+            return;
+          }
 
         const auto* sn = p.findExtension<SupportedNotifications> (
             SupportedNotifications::EXT_TYPE);
@@ -786,8 +794,8 @@ Client::Impl::WaitForChange (const std::string& type, const Json::Value& known)
 
 /* ************************************************************************** */
 
-Client::Client (const std::string& srv)
-  : serverJid(srv)
+Client::Client (const std::string& srv, const std::string& v)
+  : serverJid(srv), version(v)
 {
   SetTimeout (DEFAULT_TIMEOUT);
 }

@@ -40,6 +40,8 @@ namespace
 
 DEFINE_string (backend_rpc_url, "",
                "URL at which the backend JSON-RPC interface is available");
+DEFINE_string (backend_version, "",
+               "A string identifying the version of the backend provided");
 
 DEFINE_string (server_jid, "", "Bare or full JID for the server");
 DEFINE_string (password, "", "XMPP password for the server JID");
@@ -91,6 +93,7 @@ main (int argc, char** argv)
   charon::ForwardingRpcServer backend(FLAGS_backend_rpc_url);
   LOG (INFO)
       << "Forwarding calls to JSON-RPC server at " << FLAGS_backend_rpc_url;
+  LOG (INFO) << "Reporting backend version " << FLAGS_backend_version;
 
   const auto methods = charon::GetSelectedMethods ();
   if (methods.empty ())
@@ -102,7 +105,7 @@ main (int argc, char** argv)
     }
 
   LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
-  charon::Server srv(backend);
+  charon::Server srv(FLAGS_backend_version, backend);
   srv.Connect (FLAGS_server_jid, FLAGS_password, FLAGS_priority);
 
   if (FLAGS_pubsub_service.empty ())

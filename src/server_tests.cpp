@@ -146,12 +146,13 @@ protected:
   static constexpr const TestAccount& accServer = ACCOUNTS[0];
   static constexpr const TestAccount& accClient = ACCOUNTS[1];
   static constexpr const char* SERVER_RES = "test";
+  static constexpr const char* SERVER_VERSION = "version";
 
   Server server;
 
   ServerTests ()
     : XmppClient(JIDWithoutResource (accClient), accClient.password),
-      server(backend)
+      server(SERVER_VERSION, backend)
   {
     RunWithClient ([] (gloox::Client& c)
       {
@@ -170,6 +171,7 @@ protected:
 };
 
 constexpr const char* ServerTests::SERVER_RES;
+constexpr const char* ServerTests::SERVER_VERSION;
 
 /* ************************************************************************** */
 
@@ -186,6 +188,9 @@ private:
 
   /** Mutex for cv.  */
   std::mutex mut;
+
+  /** Copy of the received pong message.  */
+  std::unique_ptr<PongMessage> pongMessage;
 
   /** Resource of the sender of pong.  */
   std::string pongResource;
@@ -222,6 +227,8 @@ private:
 
         std::lock_guard<std::mutex> lock(mut);
         pongResource = p.from ().resource ();
+        pongMessage.reset (dynamic_cast<PongMessage*> (ext->clone ()));
+        CHECK (pongMessage->IsValid ());
         cv.notify_all ();
       }
   }
@@ -258,9 +265,10 @@ protected:
   WaitForPong ()
   {
     std::unique_lock<std::mutex> lock(mut);
-    while (pongResource.empty ())
+    while (pongMessage == nullptr)
       cv.wait (lock);
 
+    CHECK (!pongResource.empty ());
     return pongResource;
   }
 
@@ -274,12 +282,23 @@ protected:
     return pongNotifications.get ();
   }
 
+  /**
+   * Returns the PongMessage received.
+   */
+  const PongMessage&
+  GetPongMessage () const
+  {
+    CHECK (pongMessage != nullptr);
+    return *pongMessage;
+  }
+
 };
 
-TEST_F (ServerPingTests, GetResource)
+TEST_F (ServerPingTests, GetResourceAndVersion)
 {
   SendPing (JIDWithoutResource (accServer));
   EXPECT_EQ (WaitForPong (), SERVER_RES);
+  EXPECT_EQ (GetPongMessage ().GetVersion (), SERVER_VERSION);
   EXPECT_EQ (GetNotifications (), nullptr);
 }
 

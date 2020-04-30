@@ -84,7 +84,7 @@ private:
 
         LOG (INFO) << "Sleep done, sending pong now";
         gloox::Presence reply(gloox::Presence::Available, msg.from ());
-        reply.addExtension (new PongMessage ());
+        reply.addExtension (new PongMessage (serverVersion));
 
         RunWithClient ([&reply] (gloox::Client& c)
           {
@@ -124,12 +124,16 @@ protected:
   static constexpr const TestAccount& accServer = ACCOUNTS[0];
   static constexpr const TestAccount& accClient = ACCOUNTS[1];
   static constexpr const char* SERVER_RES = "test";
+  static constexpr const char* SERVER_VERSION = "version";
 
   Client client;
 
+  /** The version string to return by the server.  */
+  std::string serverVersion = SERVER_VERSION;
+
   ClientServerDiscoveryTests ()
     : XmppClient(JIDWithResource (accServer, SERVER_RES), accServer.password),
-      client(JIDWithoutResource (accServer).bare ())
+      client(JIDWithoutResource (accServer).bare (), SERVER_VERSION)
   {
     RunWithClient ([this] (gloox::Client& c)
       {
@@ -167,6 +171,13 @@ TEST_F (ClientServerDiscoveryTests, FindsServerResource)
   client.SetTimeout (2 * PONG_DELAY);
   EXPECT_EQ (client.GetServerResource (), SERVER_RES);
   ExpectClientPresence ();
+}
+
+TEST_F (ClientServerDiscoveryTests, VersionMismatch)
+{
+  serverVersion = std::string ("not ") + SERVER_VERSION;
+  client.SetTimeout (2 * PONG_DELAY);
+  EXPECT_EQ (client.GetServerResource (), "");
 }
 
 TEST_F (ClientServerDiscoveryTests, Timeout)
@@ -240,6 +251,8 @@ private:
   static constexpr const TestAccount& accServer = ACCOUNTS[0];
   static constexpr const TestAccount& accClient = ACCOUNTS[1];
 
+  static constexpr const char* SERVER_VERSION = "version";
+
 protected:
 
   DelayedTestBackend backend;
@@ -247,7 +260,7 @@ protected:
   Client client;
 
   ClientTestWithServer ()
-    : client(JIDWithoutResource (accServer).bare ())
+    : client(JIDWithoutResource (accServer).bare (), SERVER_VERSION)
   {}
 
   /**
@@ -266,7 +279,7 @@ protected:
   std::unique_ptr<Server>
   ConnectServer (const std::string& ressource="")
   {
-    auto res = std::make_unique<Server> (backend);
+    auto res = std::make_unique<Server> (SERVER_VERSION, backend);
     res->Connect (JIDWithResource (accServer, ressource).full (),
                   accServer.password, 0);
     return res;

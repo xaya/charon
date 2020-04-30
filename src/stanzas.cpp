@@ -386,7 +386,24 @@ PingMessage::tag () const
 PongMessage::PongMessage ()
   : ValidatedStanzaExtension(EXT_TYPE)
 {
+  SetValid (false);
+}
+
+PongMessage::PongMessage (const std::string& v)
+  : ValidatedStanzaExtension(EXT_TYPE),
+    version(v)
+{
   SetValid (true);
+}
+
+PongMessage::PongMessage (const gloox::Tag& t)
+  : ValidatedStanzaExtension(EXT_TYPE)
+{
+  SetValid (true);
+
+  /* If the attribute is not present, then we assume an empty version.
+     This is totally fine.  */
+  version = t.findAttribute ("version");
 }
 
 const std::string&
@@ -399,13 +416,13 @@ PongMessage::filterString () const
 gloox::StanzaExtension*
 PongMessage::newInstance (const gloox::Tag* tag) const
 {
-  return new PongMessage ();
+  return new PongMessage (*tag);
 }
 
 gloox::StanzaExtension*
 PongMessage::clone () const
 {
-  return new PongMessage ();
+  return new PongMessage (version);
 }
 
 gloox::Tag*
@@ -413,6 +430,8 @@ PongMessage::tag () const
 {
   auto res = std::make_unique<gloox::Tag> ("pong");
   CHECK (res->setXmlns (XMLNS));
+  if (!version.empty ())
+    CHECK (res->addAttribute ("version", version));
 
   return res.release ();
 }

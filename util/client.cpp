@@ -43,6 +43,8 @@ namespace
 {
 
 DEFINE_string (server_jid, "", "Bare or full JID for the server");
+DEFINE_string (backend_version, "",
+               "A string identifying the version of the backend required");
 
 DEFINE_string (client_jid, "", "Bare or full JID for the client");
 DEFINE_string (password, "", "XMPP password for the client JID");
@@ -218,7 +220,8 @@ main (int argc, char** argv)
     }
 
   LOG (INFO) << "Using " << FLAGS_server_jid << " as server";
-  charon::Client client(FLAGS_server_jid);
+  LOG (INFO) << "Requiring backend version " << FLAGS_backend_version;
+  charon::Client client(FLAGS_server_jid, FLAGS_backend_version);
 
   LOG (INFO) << "Listening for local RPCs on port " << FLAGS_port;
   jsonrpc::HttpServer httpServer(FLAGS_port);

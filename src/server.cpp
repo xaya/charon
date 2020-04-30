@@ -126,6 +126,9 @@ class Server::IqAnsweringClient : public XmppClient,
 
 private:
 
+  /** The server's version string.  */
+  const std::string& version;
+
   /** The backend server to use for answering requests.  */
   RpcServer& backend;
 
@@ -139,7 +142,8 @@ private:
 
 public:
 
-  explicit IqAnsweringClient (RpcServer& b, const gloox::JID& jid,
+  explicit IqAnsweringClient (const std::string& v, RpcServer& b,
+                              const gloox::JID& jid,
                               const std::string& password);
 
   /**
@@ -158,10 +162,11 @@ public:
 
 };
 
-Server::IqAnsweringClient::IqAnsweringClient (RpcServer& b,
+Server::IqAnsweringClient::IqAnsweringClient (const std::string& v,
+                                              RpcServer& b,
                                               const gloox::JID& jid,
                                               const std::string& password)
-  : XmppClient(jid, password), backend(b)
+  : XmppClient(jid, password), version(v), backend(b)
 {
   RunWithClient ([this] (gloox::Client& c)
     {
@@ -188,7 +193,7 @@ Server::IqAnsweringClient::handleMessage (const gloox::Message& msg,
       LOG (INFO) << "Processing ping from " << msg.from ().full ();
 
       gloox::Presence response(gloox::Presence::Available, msg.from ());
-      response.addExtension (new PongMessage ());
+      response.addExtension (new PongMessage (version));
 
       if (!notifications.empty ())
         {
@@ -281,8 +286,8 @@ Server::IqAnsweringClient::AddNotification (std::unique_ptr<WaiterThread> upd)
   return node;
 }
 
-Server::Server (RpcServer& b)
-  : backend(b)
+Server::Server (const std::string& v, RpcServer& b)
+  : version(v), backend(b)
 {}
 
 Server::~Server () = default;
@@ -292,7 +297,8 @@ Server::Connect (const std::string& jidStr, const std::string& password,
                  const int priority)
 {
   const gloox::JID jid(jidStr);
-  client = std::make_unique<IqAnsweringClient> (backend, jid, password);
+  client = std::make_unique<IqAnsweringClient> (version, backend,
+                                                jid, password);
   client->Connect (priority);
 }
 
