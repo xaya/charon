@@ -33,13 +33,15 @@ receives such a message and feels ready to accept another client (i.e. is not
 overloaded) will reply with a directed presence as acknowledgement:
 
     <presence to="player@server/resource">
-      <pong xmlns="https://xaya.io/charon/" />
+      <pong xmlns="https://xaya.io/charon/" version="backend version" />
     </presence>
 
 The client can then select one of the replies it gets (in case there are
 multiple) and record the GSP client's full JID (including its resource)
-for further requests.  Once a server is selected, the client will send
-a directed presence as well:
+for further requests.  It can also take the backend version provided by
+the server into account, in case it wants to ensure a particular set of
+consensus rules (while a fork is going on) or interface.
+Once a server is selected, the client will send a directed presence as well:
 
     <presence to="gsp@server/resource" />
 
