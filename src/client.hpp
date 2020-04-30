@@ -50,6 +50,9 @@ private:
   /** The user-chosen server JID, which is typically just a bare JID.  */
   std::string serverJid;
 
+  /** The expected server version string.  */
+  std::string version;
+
   /** Current timeout when waiting for replies of the server JID.  */
   Duration timeout;
 
@@ -72,7 +75,7 @@ public:
    * made (after the instance is connected) will be forwarded to the given
    * JID for reply.
    */
-  explicit Client (const std::string& srv);
+  explicit Client (const std::string& srv, const std::string& v);
 
   ~Client ();
 
