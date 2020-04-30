@@ -266,7 +266,7 @@ protected:
   std::unique_ptr<Server>
   ConnectServer (const std::string& ressource="")
   {
-    auto res = std::make_unique<Server> (backend);
+    auto res = std::make_unique<Server> ("", backend);
     res->Connect (JIDWithResource (accServer, ressource).full (),
                   accServer.password, 0);
     return res;

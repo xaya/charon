@@ -39,6 +39,9 @@ private:
 
   class IqAnsweringClient;
 
+  /** The version string to report.  */
+  const std::string version;
+
   /** The backing RpcServer instance.  */
   RpcServer& backend;
 
@@ -53,7 +56,7 @@ private:
 
 public:
 
-  explicit Server (RpcServer& b);
+  explicit Server (const std::string& v, RpcServer& b);
   ~Server ();
 
   Server () = delete;
