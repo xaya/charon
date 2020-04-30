@@ -148,6 +148,31 @@ TEST_F (RpcResponseTests, ErrorOnlyCode)
 
 /* ************************************************************************** */
 
+using PongMessageTests = testing::Test;
+
+TEST_F (PongMessageTests, WithoutVersion)
+{
+  PongMessage original("");
+  auto recreated = ExtensionRoundtrip (original);
+
+  ASSERT_TRUE (recreated->IsValid ());
+  EXPECT_EQ (recreated->GetVersion (), "");
+
+  std::unique_ptr<gloox::Tag> tag(original.tag ());
+  EXPECT_FALSE (tag->hasAttribute ("version"));
+}
+
+TEST_F (PongMessageTests, WithVersion)
+{
+  PongMessage original("version");
+  auto recreated = ExtensionRoundtrip (original);
+
+  ASSERT_TRUE (recreated->IsValid ());
+  EXPECT_EQ (recreated->GetVersion (), "version");
+}
+
+/* ************************************************************************** */
+
 using SupportedNotificationsTests = testing::Test;
 
 TEST_F (SupportedNotificationsTests, NoNotifications)

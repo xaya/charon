@@ -240,10 +240,15 @@ public:
 /**
  * A gloox StanzaExtension representing a "pong" message/presence:
  *
- *  <pong xmlns="https://xaya.io/charon/" />
+ *  <pong xmlns="https://xaya.io/charon/" version="server version" />
  */
 class PongMessage : public ValidatedStanzaExtension
 {
+
+private:
+
+  /** The server version string.  */
+  std::string version;
 
 public:
 
@@ -252,9 +257,28 @@ public:
 
   /**
    * Constructs an empty instance, which can be used as a factory
-   * as well as a totally valid message.
+   * but is otherwise marked as invalid.
    */
   PongMessage ();
+
+  /**
+   * Constructs a valid instance based on the given version string.
+   */
+  explicit PongMessage (const std::string& v);
+
+  /**
+   * Constructs an instance from a given tag.
+   */
+  explicit PongMessage (const gloox::Tag& t);
+
+  /**
+   * Returns this instance's version string.
+   */
+  const std::string&
+  GetVersion () const
+  {
+    return version;
+  }
 
   const std::string& filterString () const override;
   gloox::StanzaExtension* newInstance (const gloox::Tag* tag) const override;
