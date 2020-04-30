@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -52,6 +52,7 @@ public:
   explicit PubSubClient (const TestAccount& acc, const std::string res = "")
     : XmppClient(JIDWithResource (acc, res), acc.password)
   {
+    SetRootCA (GetTestCA ());
     Connect (0);
     AddPubSub (gloox::JID (GetServerConfig ().pubsub));
   }

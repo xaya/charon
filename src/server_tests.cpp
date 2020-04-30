@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -84,6 +84,7 @@ TEST_F (ServerConnectionTests, Success)
   Server server("", backend,
                 JIDWithoutResource (GetTestAccount (0)).full (),
                 GetTestAccount (0).password);
+  server.SetRootCA (GetTestCA ());
   AddNotifications (server);
 
   EXPECT_TRUE (server.Connect (0));
@@ -98,6 +99,7 @@ TEST_F (ServerConnectionTests, Failure)
   Server server("", backend,
                 JIDWithoutResource (GetTestAccount (0)).full (),
                 "wrong password");
+  server.SetRootCA (GetTestCA ());
   AddNotifications (server);
 
   EXPECT_FALSE (server.Connect (0));
@@ -225,6 +227,9 @@ protected:
         c.registerStanzaExtension (new PongMessage ());
         c.registerStanzaExtension (new SupportedNotifications ());
       });
+
+    server.SetRootCA (GetTestCA ());
+    SetRootCA (GetTestCA ());
 
     server.Connect (0);
     Connect (0);
@@ -614,7 +619,9 @@ protected:
     : server("", backend,
              JIDWithoutResource (GetTestAccount (0)).full (),
              GetTestAccount (0).password)
-  {}
+  {
+    server.SetRootCA (GetTestCA ());
+  }
 
 };
 

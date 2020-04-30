@@ -11,7 +11,7 @@ USER root
 ARG ERLANG_HOST="localhost"
 
 WORKDIR $HOME
-COPY ejabberd.yml ejabberdctl.cfg conf/
+COPY ejabberd.yml ejabberdctl.cfg ejabberd.pem conf/
 COPY entrypoint.sh bin/
 RUN echo "ERLANG_NODE=ejabberd@${ERLANG_HOST}" >>conf/ejabberdctl.cfg
 

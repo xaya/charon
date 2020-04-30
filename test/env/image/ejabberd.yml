@@ -10,7 +10,7 @@ log_rotate_size: 10485760
 log_rotate_count: 1
 
 certfiles:
-  - /home/ejabberd/conf/server.pem
+  - /home/ejabberd/conf/ejabberd.pem
 
 # gloox does not work well together with TLSv1.3, so we should avoid
 # using that.

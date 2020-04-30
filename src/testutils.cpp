@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -23,6 +23,8 @@
 
 #include <glog/logging.h>
 
+#include <experimental/filesystem>
+
 #include <chrono>
 #include <cstdlib>
 #include <sstream>
@@ -31,6 +33,8 @@ using testing::IsEmpty;
 
 namespace charon
 {
+
+namespace fs = std::experimental::filesystem;
 
 /* ************************************************************************** */
 
@@ -44,6 +48,7 @@ const ServerConfiguration LOCAL_SERVER =
   {
     "localhost",
     "pubsub.localhost",
+    "testenv.pem",
     {
       {"xmpptest1", "password"},
       {"xmpptest2", "password"},
@@ -61,6 +66,7 @@ const ServerConfiguration PROD_SERVER =
   {
     "chat.xaya.io",
     "pubsub.chat.xaya.io",
+    "letsencrypt.pem",
     {
       {
         "xmpptest1",
@@ -101,6 +107,16 @@ const TestAccount&
 GetTestAccount (const unsigned n)
 {
   return GetServerConfig ().accounts[n];
+}
+
+std::string
+GetTestCA ()
+{
+  const char* top = std::getenv ("top_srcdir");
+  if (top == nullptr)
+    top = "..";
+
+  return fs::path (top) / "data" / GetServerConfig ().cafile;
 }
 
 /* ************************************************************************** */

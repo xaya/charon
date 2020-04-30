@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -928,6 +928,13 @@ Client::Client (const std::string& srv, const std::string& v,
 }
 
 Client::~Client () = default;
+
+void
+Client::SetRootCA (const std::string& path)
+{
+  CHECK (impl != nullptr);
+  impl->SetRootCA (path);
+}
 
 void
 Client::Connect ()

@@ -48,7 +48,8 @@ tests_CXXFLAGS = \
 tests_LDADD = \
   $(builddir)/libcharon.la \
   $(JSON_LIBS) $(JSONRPCCLIENT_LIBS) $(JSONRPCSERVER_LIBS) \
-  $(GTEST_LIBS) $(GLOG_LIBS) $(GLOOX_LIBS)
+  $(GTEST_LIBS) $(GLOG_LIBS) $(GLOOX_LIBS) \
+  -lstdc++fs
 tests_SOURCES = \
   testutils.cpp \
   \
