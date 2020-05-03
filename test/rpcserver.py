@@ -1,5 +1,5 @@
 #   Charon - a transport system for GSP data
-#   Copyright (C) 2019  Autonomous Worlds Ltd
+#   Copyright (C) 2019-2020  Autonomous Worlds Ltd
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ Logic for implementing test RPC servers.
 from jsonrpclib.SimpleJSONRPCServer import SimpleJSONRPCServer
 
 import logging
-import SocketServer
+import socketserver
 import threading
 
 
@@ -29,7 +29,7 @@ import threading
 SHUTDOWN_POLLING_INTERVAL = 0.1
 
 
-class Server (SocketServer.ThreadingMixIn, SimpleJSONRPCServer, object):
+class Server (socketserver.ThreadingMixIn, SimpleJSONRPCServer, object):
   """
   JSON-RPC server for use in tests.  It forwards calls to the members of
   a given object.  This is also a context manager, which takes care of starting

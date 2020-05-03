@@ -98,7 +98,7 @@ class Client ():
     Returns a fresh JSON-RPC client connection to the process' local server.
     """
 
-    return jsonrpclib.Server (self.rpcurl)
+    return jsonrpclib.ServerProxy (self.rpcurl)
 
 
 class Server ():

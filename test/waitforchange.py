@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 #   Charon - a transport system for GSP data
 #   Copyright (C) 2020  Autonomous Worlds Ltd
@@ -81,7 +81,7 @@ class Waiter:
     time.sleep (0.1)
     assert self.thread.isAlive ()
 
-  def await (self):
+  def wait (self):
     self.thread.join ()
     return self.result
 
@@ -101,15 +101,15 @@ with Methods () as backend, \
 
     w.assertRunning ()
     backend.update ("first")
-    t.assertEqual (w.await (), "first")
+    t.assertEqual (w.wait (), "first")
 
     w = Waiter (c.rpc.waitforchange, "other")
-    t.assertEqual (w.await (), "first")
+    t.assertEqual (w.wait (), "first")
 
     w = Waiter (c.rpc.waitforchange, "")
     w.assertRunning ()
     backend.update ("second")
-    t.assertEqual (w.await (), "second")
+    t.assertEqual (w.wait (), "second")
 
   t.mainLogger.info ("Testing server reselection...")
   with t.runServer (backend):
@@ -118,4 +118,4 @@ with Methods () as backend, \
 
     w.assertRunning ()
     backend.update ("third")
-    t.assertEqual (w.await (), "third")
+    t.assertEqual (w.wait (), "third")

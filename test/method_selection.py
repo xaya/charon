@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 #   Charon - a transport system for GSP data
 #   Copyright (C) 2020  Autonomous Worlds Ltd
