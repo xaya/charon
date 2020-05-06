@@ -24,6 +24,7 @@
 #include <glog/logging.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <sstream>
 
 using testing::IsEmpty;
@@ -33,35 +34,83 @@ namespace charon
 
 /* ************************************************************************** */
 
-const char* const XMPP_SERVER = "chat.xaya.io";
-const char* const PUBSUB_SERVICE = "pubsub.chat.xaya.io";
+namespace
+{
 
 /**
- * Our test accounts.  They are all set up for XID on mainnet, and the address
+ * Configuration for the local test environment.
+ */
+const ServerConfiguration LOCAL_SERVER =
+  {
+    "localhost",
+    "pubsub.localhost",
+    {
+      {"xmpptest1", "password"},
+      {"xmpptest2", "password"},
+    },
+  };
+
+/**
+ * Configuration on the production server (chat.xaya.io).  The accounts are all
+ * set up for XID on mainnet, and the address
  * CLkoEc3g1XCqF1yevLfE1F2EksLhGSd8GC is set as global signer.  It has the
  * private key LMeJqBHefZdZbH7pHBqhmBu3pFzBpVo78SnBgsoHc6KYaDv9CEYp.
  * The passwords given are unexpiring XID credentials for chat.xaya.io.
  */
-const TestAccount ACCOUNTS[] =
+const ServerConfiguration PROD_SERVER =
   {
+    "chat.xaya.io",
+    "pubsub.chat.xaya.io",
     {
-      "xmpptest1",
-      "CkEfa5+WT2Rc5/TiMDhMynAbSJ+DY9FmE5lcWgWMRQWUBV5UQsgjiBWL302N4kdLZYygJVBV"
-      "x3vYsDNUx8xBbw27WA==",
-    },
-    {
-      "xmpptest2",
-      "CkEgOEFNwRdLQ6uD543MJLSzip7mTahM1we9GDl3S5NlR49nrJ0JxcFfQmDbbF4C4OpqSlTp"
-      "x8OG6xtFjCUMLh/AGA==",
+      {
+        "xmpptest1",
+        "CkEfa5+WT2Rc5/TiMDhMynAbSJ+DY9FmE5lcWgWMRQWUBV5UQsgjiBWL302N4kdLZYygJV"
+        "BVx3vYsDNUx8xBbw27WA==",
+      },
+      {
+        "xmpptest2",
+        "CkEgOEFNwRdLQ6uD543MJLSzip7mTahM1we9GDl3S5NlR49nrJ0JxcFfQmDbbF4C4OpqSl"
+        "Tpx8OG6xtFjCUMLh/AGA==",
+      },
     },
   };
+
+} // anonymous namespace
+
+const ServerConfiguration&
+GetServerConfig ()
+{
+  const char* srvPtr = std::getenv ("CHARON_TEST_SERVER");
+  std::string srv;
+  if (srvPtr == nullptr)
+    srv = "localhost";
+  else
+    srv = srvPtr;
+
+  LOG_FIRST_N (INFO, 1) << "Using test server: " << srv;
+
+  if (srv == "localhost")
+    return LOCAL_SERVER;
+  if (srv == "chat.xaya.io")
+    return PROD_SERVER;
+
+  LOG (FATAL) << "Invalid test server chosen: " << srv;
+}
+
+const TestAccount&
+GetTestAccount (const unsigned n)
+{
+  return GetServerConfig ().accounts[n];
+}
+
+/* ************************************************************************** */
 
 gloox::JID
 JIDWithoutResource (const TestAccount& acc)
 {
   gloox::JID res;
   res.setUsername (acc.name);
-  res.setServer (XMPP_SERVER);
+  res.setServer (GetServerConfig ().server);
   return res;
 }
 

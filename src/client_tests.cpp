@@ -102,7 +102,7 @@ private:
         return;
       }
 
-    if (p.from ().bareJID () != JIDWithoutResource (accClient)
+    if (p.from ().bareJID () != JIDWithoutResource (GetTestAccount (accClient))
           || p.from ().resource ().empty ())
       {
         LOG (WARNING)
@@ -121,8 +121,9 @@ private:
 
 protected:
 
-  static constexpr const TestAccount& accServer = ACCOUNTS[0];
-  static constexpr const TestAccount& accClient = ACCOUNTS[1];
+  static constexpr int accServer = 0;
+  static constexpr int accClient = 1;
+
   static constexpr const char* SERVER_RES = "test";
   static constexpr const char* SERVER_VERSION = "version";
 
@@ -132,8 +133,10 @@ protected:
   std::string serverVersion = SERVER_VERSION;
 
   ClientServerDiscoveryTests ()
-    : XmppClient(JIDWithResource (accServer, SERVER_RES), accServer.password),
-      client(JIDWithoutResource (accServer).bare (), SERVER_VERSION)
+    : XmppClient(JIDWithResource (GetTestAccount (accServer), SERVER_RES),
+                 GetTestAccount (accServer).password),
+      client(JIDWithoutResource (GetTestAccount (accServer)).bare (),
+             SERVER_VERSION)
   {
     RunWithClient ([this] (gloox::Client& c)
       {
@@ -146,8 +149,8 @@ protected:
         c.registerPresenceHandler (this);
       });
 
-    client.Connect (JIDWithoutResource (accClient).full (),
-                    accClient.password, 0);
+    client.Connect (JIDWithoutResource (GetTestAccount (accClient)).full (),
+                    GetTestAccount (accClient).password, 0);
     Connect (0);
   }
 
@@ -248,8 +251,8 @@ class ClientTestWithServer : public testing::Test
 
 private:
 
-  static constexpr const TestAccount& accServer = ACCOUNTS[0];
-  static constexpr const TestAccount& accClient = ACCOUNTS[1];
+  static constexpr int accServer = 0;
+  static constexpr int accClient = 1;
 
   static constexpr const char* SERVER_VERSION = "version";
 
@@ -260,7 +263,8 @@ protected:
   Client client;
 
   ClientTestWithServer ()
-    : client(JIDWithoutResource (accServer).bare (), SERVER_VERSION)
+    : client(JIDWithoutResource (GetTestAccount (accServer)).bare (),
+             SERVER_VERSION)
   {}
 
   /**
@@ -269,8 +273,8 @@ protected:
   void
   ConnectClient ()
   {
-    client.Connect (JIDWithoutResource (accClient).full (),
-                    accClient.password, 0);
+    client.Connect (JIDWithoutResource (GetTestAccount (accClient)).full (),
+                    GetTestAccount (accClient).password, 0);
   }
 
   /**
@@ -280,8 +284,9 @@ protected:
   ConnectServer (const std::string& ressource="")
   {
     auto res = std::make_unique<Server> (SERVER_VERSION, backend);
-    res->Connect (JIDWithResource (accServer, ressource).full (),
-                  accServer.password, 0);
+    res->Connect (
+        JIDWithResource (GetTestAccount (accServer), ressource).full (),
+        GetTestAccount (accServer).password, 0);
     return res;
   }
 
@@ -507,9 +512,9 @@ TEST_F (ClientNotificationTests, SelectsServerWithNotifications)
 
   auto s1 = ConnectServer ("nothing");
   auto s2 = ConnectServer ("service only");
-  s2->AddPubSub (PUBSUB_SERVICE);
+  s2->AddPubSub (GetServerConfig ().pubsub);
   auto s3 = ConnectServer ("partial notifications");
-  s3->AddPubSub (PUBSUB_SERVICE);
+  s3->AddPubSub (GetServerConfig ().pubsub);
 
   UpdatableState upd;
   s3->AddNotification (upd.NewWaiter ("foo"));
@@ -519,7 +524,7 @@ TEST_F (ClientNotificationTests, SelectsServerWithNotifications)
   EXPECT_EQ (client.GetServerResource (), "");
 
   auto s4 = ConnectServer ("good");
-  s4->AddPubSub (PUBSUB_SERVICE);
+  s4->AddPubSub (GetServerConfig ().pubsub);
   s4->AddNotification (upd.NewWaiter ("foo"));
   s4->AddNotification (upd.NewWaiter ("bar"));
 
@@ -538,7 +543,7 @@ TEST_F (ClientNotificationTests, WaitForChange)
   ConnectClient ({"foo"});
 
   auto s = ConnectServer ();
-  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddPubSub (GetServerConfig ().pubsub);
 
   UpdatableState upd;
   s->AddNotification (upd.NewWaiter ("foo"));
@@ -569,7 +574,7 @@ TEST_F (ClientNotificationTests, AlwaysBlock)
   ConnectClient ({"foo"});
 
   auto s = ConnectServer ();
-  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddPubSub (GetServerConfig ().pubsub);
 
   UpdatableState upd;
   s->AddNotification (upd.NewWaiter ("foo"));
@@ -595,7 +600,7 @@ TEST_F (ClientNotificationTests, TwoNotifications)
   ConnectClient ({"foo", "bar"});
 
   auto s = ConnectServer ();
-  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddPubSub (GetServerConfig ().pubsub);
 
   UpdatableState upd1;
   s->AddNotification (upd1.NewWaiter ("foo"));
@@ -623,14 +628,14 @@ TEST_F (ClientNotificationTests, TwoServers)
   ConnectClient ({"foo"});
 
   auto s1 = ConnectServer ("srv1");
-  s1->AddPubSub (PUBSUB_SERVICE);
+  s1->AddPubSub (GetServerConfig ().pubsub);
   UpdatableState upd1;
   s1->AddNotification (upd1.NewWaiter ("foo"));
 
   ASSERT_EQ (client.GetServerResource (), "srv1");
 
   auto s2 = ConnectServer ("srv2");
-  s2->AddPubSub (PUBSUB_SERVICE);
+  s2->AddPubSub (GetServerConfig ().pubsub);
   UpdatableState upd2;
   s2->AddNotification (upd1.NewWaiter ("foo"));
 
@@ -651,14 +656,14 @@ TEST_F (ClientNotificationTests, ServerReselection)
   UpdatableState upd;
 
   auto s = ConnectServer ("srv1");
-  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddPubSub (GetServerConfig ().pubsub);
   s->AddNotification (upd.NewWaiter ("foo"));
 
   EXPECT_EQ (client.GetServerResource (), "srv1");
   auto w = CallWaitForChange ("foo", "");
 
   s = ConnectServer ("srv2");
-  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddPubSub (GetServerConfig ().pubsub);
   s->AddNotification (upd.NewWaiter ("foo"));
 
   /* Sleep a bit to make sure the client got notified about the disconnect.  */
@@ -676,7 +681,7 @@ TEST_F (ClientNotificationTests, ServerReselection)
      and only use GetServerResource to force all subscriptions to be done
      before updating the server state.  */
   s = ConnectServer ("srv3");
-  s->AddPubSub (PUBSUB_SERVICE);
+  s->AddPubSub (GetServerConfig ().pubsub);
   s->AddNotification (upd.NewWaiter ("foo"));
 
   std::this_thread::sleep_for (std::chrono::milliseconds (500));

@@ -36,17 +36,6 @@ from jsonrpclib import ProtocolError
 BASE_DIR = "/tmp"
 DIR_PREFIX = "charontest"
 
-# Accounts on chat.xaya.io (XID mainnet) for use with testing.
-# See src/testutils.cpp for more details.
-TEST_ACCOUNTS = [
-  ("xmpptest1", "CkEfa5+WT2Rc5/TiMDhMynAbSJ+DY9FmE5lcWgWMRQWUBV5UQsgjiBWL302N4k"
-                "dLZYygJVBVx3vYsDNUx8xBbw27WA=="),
-  ("xmpptest2", "CkEgOEFNwRdLQ6uD543MJLSzip7mTahM1we9GDl3S5NlR49nrJ0JxcFfQmDbbF"
-                "4C4OpqSlTpx8OG6xtFjCUMLh/AGA=="),
-]
-XMPP_SERVER = "chat.xaya.io"
-PUBSUB = "pubsub.chat.xaya.io"
-
 
 class Fixture (object):
   """
@@ -84,6 +73,7 @@ class Fixture (object):
     self.mainLogger.info ("Base directory for integration test: %s"
                             % self.basedir)
 
+    self.cfg = self.getServerConfig ()
     self.nextPort = random.randint (1024, 30000)
     self.log.info ("Using ports starting from %d" % self.nextPort)
 
@@ -116,10 +106,11 @@ class Fixture (object):
     if methods is None:
       methods = self.methods
 
+    acc = self.cfg["accounts"]
     return charonbin.Client (self.basedir, binary, port, methods,
-                             self.getAccountJid (TEST_ACCOUNTS[0]),
-                             self.getAccountJid (TEST_ACCOUNTS[1]),
-                             TEST_ACCOUNTS[1][1],
+                             self.getAccountJid (acc[0]),
+                             self.getAccountJid (acc[1]),
+                             acc[1][1],
                              extraArgs)
 
   @contextmanager
@@ -137,10 +128,11 @@ class Fixture (object):
     if methods is None:
       methods = self.methods
 
+    acc = self.cfg["accounts"]
     with rpcserver.Server (("localhost", port), obj), \
          charonbin.Server (self.basedir, binary, methods, backend,
-                           self.getAccountJid (TEST_ACCOUNTS[0]),
-                           TEST_ACCOUNTS[0][1], PUBSUB,
+                           self.getAccountJid (acc[0]),
+                           acc[0][1], self.cfg["pubsub"],
                            extraArgs):
       yield
 
@@ -184,4 +176,43 @@ class Fixture (object):
     Returns the JID of the given test account.
     """
 
-    return "%s@%s" % (acc[0], XMPP_SERVER)
+    return "%s@%s" % (acc[0], self.cfg["server"])
+
+  def getServerConfig (self):
+    """
+    Returns the XMPP server, pubsub service and test accounts to use
+    for the integration test.  This can either be the local environment
+    or the production chat.xaya.io server with real XID mainnet accounts
+    (see src/testutils.cpp for more details).
+
+    By default, the local environment is used.  To run tests against the
+    production server, set the CHARON_TEST_SERVER environment variable
+    to "chat.xaya.io".
+    """
+
+    srv = os.getenv ("CHARON_TEST_SERVER", default="localhost")
+    self.mainLogger.info ("Using %s as test server" % srv)
+
+    if srv == "localhost":
+      return {
+        "server": "localhost",
+        "pubsub": "pubsub.localhost",
+        "accounts": [
+          ("xmpptest1", "password"),
+          ("xmpptest2", "password"),
+        ],
+      }
+
+    if srv == "chat.xaya.io":
+      return {
+        "server": "chat.xaya.io",
+        "pubsub": "pubsub.chat.xaya.io",
+        "accounts": [
+          ("xmpptest1", "CkEfa5+WT2Rc5/TiMDhMynAbSJ+DY9FmE5lcWgWMRQWUBV5UQsgjiB"
+                        "WL302N4kdLZYygJVBVx3vYsDNUx8xBbw27WA=="),
+          ("xmpptest2", "CkEgOEFNwRdLQ6uD543MJLSzip7mTahM1we9GDl3S5NlR49nrJ0Jxc"
+                        "FfQmDbbF4C4OpqSlTpx8OG6xtFjCUMLh/AGA=="),
+        ],
+      }
+
+    raise AssertionError ("invalid test server: %s" % srv)

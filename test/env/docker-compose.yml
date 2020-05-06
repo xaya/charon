@@ -1,0 +1,11 @@
+# Start up a local ejabberd XMPP server with temporary environment
+# for testing Charon.
+
+version: "3"
+
+services:
+
+  ejabberd:
+    build: ./image
+    ports:
+      - "127.0.0.1:5222:5222"

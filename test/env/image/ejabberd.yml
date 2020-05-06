@@ -1,0 +1,78 @@
+# Basic configuration file for running a local ejabberd instance
+# with xid authentication, which is suitable for running Charon tests
+# against it.
+
+hosts:
+  - localhost
+
+loglevel: 4
+log_rotate_size: 10485760
+log_rotate_count: 1
+
+certfiles:
+  - /home/ejabberd/conf/server.pem
+
+# gloox does not work well together with TLSv1.3, so we should avoid
+# using that.
+c2s_protocol_options:
+  - "no_tlsv1_3"
+
+listen:
+  -
+    port: 5222
+    ip: "::"
+    module: ejabberd_c2s
+    max_stanza_size: 262144
+    shaper: c2s_shaper
+    access: c2s
+    starttls_required: true
+
+acl:
+  local:
+    user_regexp: ""
+  loopback:
+    ip:
+      - 127.0.0.0/8
+      - ::1/128
+      - ::FFFF:127.0.0.1/128
+  admin:
+    user:
+      - "admin@localhost"
+
+access_rules:
+  local:
+    allow: local
+  c2s:
+    allow: all
+  configure:
+    allow: admin
+  pubsub_createnode:
+    allow: local
+
+shaper_rules:
+  max_user_offline_messages:
+    - 100
+  c2s_shaper:
+    none: all
+
+max_fsm_queue: 10000
+
+modules:
+  mod_offline:
+    access_max_user_messages: max_user_offline_messages
+  mod_ping: {}
+  mod_pubsub:
+    access_createnode: pubsub_createnode
+    plugins:
+      - flat
+    default_node_config:
+      persist_items: false
+      purge_offline: true
+      access_model: open
+    force_node_config:
+      "*":
+        persist_items: false
+        purge_offline: true
+
+auth_method: internal
+auth_password_format: plain

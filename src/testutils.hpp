@@ -35,12 +35,6 @@
 namespace charon
 {
 
-/** XMPP server used for testing.  */
-extern const char* const XMPP_SERVER;
-
-/** Pubsub service at the server.  */
-extern const char* const PUBSUB_SERVICE;
-
 /**
  * Data for one of the test accounts that we use.
  */
@@ -55,8 +49,39 @@ struct TestAccount
 
 };
 
-/** Test accounts on the server.  */
-extern const TestAccount ACCOUNTS[2];
+/**
+ * Full set of "server configuration" used for testing.
+ */
+struct ServerConfiguration
+{
+
+  /** The XMPP server used.  */
+  const char* server;
+
+  /** The pubsub service.  */
+  const char* pubsub;
+
+  /** The test accounts.  */
+  TestAccount accounts[2];
+
+};
+
+/**
+ * Returns the ServerConfiguration instance that should be used throughout
+ * testing.  This can be configured with the environment variable
+ * CHARON_TEST_SERVER.
+ *
+ * By default it is localhost for the local environment (see test/env), but
+ * can also be set to chat.xaya.io for testing against the production
+ * server (and e.g. verifying that the server configuration works for
+ * Charon).
+ */
+const ServerConfiguration& GetServerConfig ();
+
+/**
+ * Returns the n-th TestAccount from the selected server config.
+ */
+const TestAccount& GetTestAccount (unsigned n);
 
 /**
  * Constructs the JID for a test account, without resource.
