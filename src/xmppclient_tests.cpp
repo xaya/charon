@@ -105,13 +105,13 @@ using XmppClientTests = testing::Test;
 
 TEST_F (XmppClientTests, Connecting)
 {
-  TestXmppClient client(ACCOUNTS[0]);
+  TestXmppClient client(GetTestAccount (0));
 }
 
 TEST_F (XmppClientTests, Messages)
 {
-  TestXmppClient client1(ACCOUNTS[0]);
-  TestXmppClient client2(ACCOUNTS[1]);
+  TestXmppClient client1(GetTestAccount (0));
+  TestXmppClient client2(GetTestAccount (1));
 
   client1.SendMessage (client2, "foo");
   client1.SendMessage (client2, "bar");

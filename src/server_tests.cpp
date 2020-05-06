@@ -143,15 +143,17 @@ private:
 
 protected:
 
-  static constexpr const TestAccount& accServer = ACCOUNTS[0];
-  static constexpr const TestAccount& accClient = ACCOUNTS[1];
+  static constexpr int accServer = 0;
+  static constexpr int accClient = 1;
+
   static constexpr const char* SERVER_RES = "test";
   static constexpr const char* SERVER_VERSION = "version";
 
   Server server;
 
   ServerTests ()
-    : XmppClient(JIDWithoutResource (accClient), accClient.password),
+    : XmppClient(JIDWithoutResource (GetTestAccount (accClient)),
+                 GetTestAccount (accClient).password),
       server(SERVER_VERSION, backend)
   {
     RunWithClient ([] (gloox::Client& c)
@@ -163,8 +165,9 @@ protected:
         c.registerStanzaExtension (new SupportedNotifications ());
       });
 
-    server.Connect (JIDWithResource (accServer, SERVER_RES).full (),
-                    accServer.password, 0);
+    server.Connect (
+        JIDWithResource (GetTestAccount (accServer), SERVER_RES).full (),
+        GetTestAccount (accServer).password, 0);
     Connect (0);
   }
 
@@ -296,7 +299,7 @@ protected:
 
 TEST_F (ServerPingTests, GetResourceAndVersion)
 {
-  SendPing (JIDWithoutResource (accServer));
+  SendPing (JIDWithoutResource (GetTestAccount (accServer)));
   EXPECT_EQ (WaitForPong (), SERVER_RES);
   EXPECT_EQ (GetPongMessage ().GetVersion (), SERVER_VERSION);
   EXPECT_EQ (GetNotifications (), nullptr);
@@ -305,16 +308,16 @@ TEST_F (ServerPingTests, GetResourceAndVersion)
 TEST_F (ServerPingTests, SupportedNotifications)
 {
   UpdatableState upd;
-  server.AddPubSub (PUBSUB_SERVICE);
+  server.AddPubSub (GetServerConfig ().pubsub);
   const auto node1 = server.AddNotification (upd.NewWaiter ("foo"));
   const auto node2 = server.AddNotification (upd.NewWaiter ("bar"));
 
-  SendPing (JIDWithoutResource (accServer));
+  SendPing (JIDWithoutResource (GetTestAccount (accServer)));
   EXPECT_EQ (WaitForPong (), SERVER_RES);
 
   const auto* n = GetNotifications ();
   ASSERT_NE (n, nullptr);
-  EXPECT_EQ (n->GetService (), PUBSUB_SERVICE);
+  EXPECT_EQ (n->GetService (), GetServerConfig ().pubsub);
   EXPECT_THAT (n->GetNotifications (), ElementsAre (
     std::make_pair ("bar", node2),
     std::make_pair ("foo", node1)
@@ -348,7 +351,8 @@ protected:
         << "Sending request for context " << context << ": "
         << method << " " << param;
 
-    const gloox::JID jidTo = JIDWithResource (accServer, SERVER_RES);
+    const gloox::JID jidTo = JIDWithResource (GetTestAccount (accServer),
+                                              SERVER_RES);
     gloox::IQ iq(gloox::IQ::Get, jidTo);
 
     Json::Value params(Json::arrayValue);
@@ -466,8 +470,8 @@ protected:
 
   ServerNotificationTests ()
   {
-    AddPubSub (gloox::JID (PUBSUB_SERVICE));
-    server.AddPubSub (PUBSUB_SERVICE);
+    AddPubSub (gloox::JID (GetServerConfig ().pubsub));
+    server.AddPubSub (GetServerConfig ().pubsub);
   }
 
 };

@@ -54,7 +54,7 @@ public:
     : XmppClient(JIDWithResource (acc, res), acc.password)
   {
     Connect (0);
-    AddPubSub (gloox::JID (PUBSUB_SERVICE));
+    AddPubSub (gloox::JID (GetServerConfig ().pubsub));
   }
 
   /**
@@ -110,7 +110,7 @@ protected:
   PubSubClient server;
 
   PubSubTests ()
-    : client(ACCOUNTS[0]), server(ACCOUNTS[1])
+    : client(GetTestAccount (0)), server(GetTestAccount (1))
   {}
 
 };
@@ -157,7 +157,7 @@ TEST_F (PubSubTests, TwoClients)
   const auto node = server.GetPubSub ().CreateNode ();
   ASSERT_TRUE (client.Subscribe (node));
 
-  PubSubClient otherClient(ACCOUNTS[0]);
+  PubSubClient otherClient(GetTestAccount (0));
   ASSERT_TRUE (otherClient.Subscribe (node));
 
   const auto xml1 = server.Publish (node, "tag1", "first");
@@ -174,7 +174,7 @@ TEST_F (PubSubTests, OneClientUnsubscribes)
 
   std::string xml1;
   {
-    PubSubClient otherClient(ACCOUNTS[0]);
+    PubSubClient otherClient(GetTestAccount (0));
     ASSERT_TRUE (otherClient.Subscribe (node));
 
     xml1 = server.Publish (node, "tag1", "first");
@@ -190,7 +190,7 @@ TEST_F (PubSubTests, ClientReconnectNotAutomaticallySubscribed)
   const auto node = server.GetPubSub ().CreateNode ();
 
   {
-    PubSubClient otherClient(ACCOUNTS[0], "res");
+    PubSubClient otherClient(GetTestAccount (0), "res");
     ASSERT_TRUE (otherClient.Subscribe (node));
 
     const auto xml = server.Publish (node, "tag1", "first");
@@ -201,7 +201,7 @@ TEST_F (PubSubTests, ClientReconnectNotAutomaticallySubscribed)
      the node again.  Only after we explicitly subscribe should we receive
      published items again.  */
   {
-    PubSubClient otherClient(ACCOUNTS[0], "res");
+    PubSubClient otherClient(GetTestAccount (0), "res");
     server.Publish (node, "tag2", "second");
 
     ASSERT_TRUE (otherClient.Subscribe (node));
@@ -213,7 +213,7 @@ TEST_F (PubSubTests, ClientReconnectNotAutomaticallySubscribed)
 
 TEST_F (PubSubTests, NodeGoesOffline)
 {
-  PubSubClient otherServer(ACCOUNTS[1]);
+  PubSubClient otherServer(GetTestAccount (1));
   const auto node = otherServer.GetPubSub ().CreateNode ();
   ASSERT_TRUE (client.Subscribe (node));
   /* It is fine that the node goes offline and is deleted before the
@@ -224,7 +224,7 @@ TEST_F (PubSubTests, ServerCleansUpNode)
 {
   std::string node;
   {
-    PubSubClient otherServer(ACCOUNTS[1]);
+    PubSubClient otherServer(GetTestAccount (1));
     node = otherServer.GetPubSub ().CreateNode ();
   }
 
@@ -243,7 +243,7 @@ TEST_F (PubSubTests, TwoServers)
 
   std::vector<std::string> xmls;
   {
-    PubSubClient otherServer(ACCOUNTS[1]);
+    PubSubClient otherServer(GetTestAccount (1));
     const auto node2 = otherServer.GetPubSub ().CreateNode ();
     ASSERT_TRUE (client.Subscribe (node2));
 
