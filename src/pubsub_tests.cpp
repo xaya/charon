@@ -228,6 +228,11 @@ TEST_F (PubSubTests, ServerCleansUpNode)
     node = otherServer.GetPubSub ().CreateNode ();
   }
 
+  /* When cleaning up, the server only sends the request but does not wait
+     on the results (to not delay the destructor).  Thus wait a bit manually
+     to make sure the deletion has gone through.  */
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+
   EXPECT_FALSE (client.Subscribe (node));
 }
 

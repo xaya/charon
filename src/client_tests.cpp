@@ -661,6 +661,9 @@ TEST_F (ClientNotificationTests, ServerReselection)
   s->AddPubSub (PUBSUB_SERVICE);
   s->AddNotification (upd.NewWaiter ("foo"));
 
+  /* Sleep a bit to make sure the client got notified about the disconnect.  */
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+
   /* Note that reselection only happens when an explicit action triggers it.
      We do this by selecting (and checking) the server resource again.  */
   EXPECT_EQ (client.GetServerResource (), "srv2");
@@ -675,6 +678,8 @@ TEST_F (ClientNotificationTests, ServerReselection)
   s = ConnectServer ("srv3");
   s->AddPubSub (PUBSUB_SERVICE);
   s->AddNotification (upd.NewWaiter ("foo"));
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
 
   w = CallWaitForChange ("foo", "always block");
   EXPECT_EQ (client.GetServerResource (), "srv3");
