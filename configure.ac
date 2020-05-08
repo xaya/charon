@@ -13,15 +13,15 @@ LT_INIT
 
 AC_LANG([C++])
 AX_CXX_COMPILE_STDCXX([14], [noext])
-AX_CHECK_COMPILE_FLAG([-Wall], [CXXFLAGS+=" -Wall"])
-AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS+=" -Werror"])
-AX_CHECK_COMPILE_FLAG([-pedantic], [CXXFLAGS+=" -pedantic"])
+AX_CHECK_COMPILE_FLAG([-Wall], [CXXFLAGS="${CXXFLAGS} -Wall"])
+AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS="${CXXFLAGS} -Werror"])
+AX_CHECK_COMPILE_FLAG([-pedantic], [CXXFLAGS="${CXXFLAGS} -pedantic"])
 
 # Windows defines ERROR, which requires us to tell glog to not define
 # it as abbreviated log severity (LOG(ERROR) still works, though, and
 # that is all that we actually use in the code).
 # See https://hpc.nih.gov/development/glog.html.
-CXXFLAGS+=" -DGLOG_NO_ABBREVIATED_SEVERITIES"
+CXXFLAGS="${CXXFLAGS} -DGLOG_NO_ABBREVIATED_SEVERITIES"
 
 # Public dependencies exposed in the headers.
 AX_PKG_CHECK_MODULES([JSON], [jsoncpp], [])

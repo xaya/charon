@@ -9,13 +9,14 @@
 # they are enough.
 
 FROM xaya/libxayagame AS build
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
   autoconf \
   autoconf-archive \
   automake \
-  build-essential \
+  build-base \
+  gflags-dev \
   libtool \
-  pkg-config \
+  pkgconfig \
   subversion
 
 # We need to install Gloox from source (until the pubsub changes done by
@@ -32,5 +33,4 @@ RUN ./autogen.sh && ./configure && make && make install-strip
 # For the final image, just copy over all built / installed stuff.
 FROM xaya/libxayagame
 COPY --from=build /usr/local /usr/local/
-RUN ldconfig
-LABEL description="Debian-based image that includes Charon and libxayagame for Xaya development"
+LABEL description="Development image with Charon and libxayagame"
