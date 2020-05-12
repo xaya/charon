@@ -32,6 +32,11 @@
 
 #include <map>
 
+/* Windows systems define a GetMessage macro, which makes this file fail to
+   compile because of JsonRpcException::GetMessage.  We cannot rename the
+   method itself, as it comes from libjson-rpc-cpp.  */
+#undef GetMessage
+
 namespace charon
 {
 
