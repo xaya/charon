@@ -467,6 +467,13 @@ private:
    */
   void TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock);
 
+  /**
+   * Forces all ongoing node subscriptions to be finished.  The caller is
+   * supposed to pass in a lock on mut, which will be released while
+   * waiting for the subscription threads (to avoid deadlocks).
+   */
+  void FinishSubscriptions (std::unique_lock<std::mutex>& lock);
+
 public:
 
   explicit Impl (Client& c, const gloox::JID& jid, const std::string& pwd);
@@ -477,11 +484,6 @@ public:
    * Returns the server's resource and tries to find one if none is there.
    */
   std::string GetServerResource ();
-
-  /**
-   * Forces all ongoing node subscriptions to be finished.
-   */
-  void FinishSubscriptions ();
 
   /**
    * Forwards the given RPC call to the server.
@@ -525,7 +527,8 @@ Client::Impl::~Impl ()
       c.removePresenceHandler (this);
     });
 
-  FinishSubscriptions ();
+  std::unique_lock<std::mutex> lock(mut);
+  FinishSubscriptions (lock);
 }
 
 void
@@ -612,7 +615,7 @@ Client::Impl::handlePresence (const gloox::Presence& p)
               }
           }
 
-        std::lock_guard<std::mutex> lock(mut);
+        std::unique_lock<std::mutex> lock(mut);
 
         /* In case we get multiple replies, we pick the first only.  */
         if (!HasFullServerJid ())
@@ -637,7 +640,7 @@ Client::Impl::handlePresence (const gloox::Presence& p)
                 /* Before recreating the pubsub instance, we have to make sure
                    that all running calls to it are done to avoid any memory
                    corruption and race conditions.  */
-                FinishSubscriptions ();
+                FinishSubscriptions (lock);
 
                 AddPubSub (sn->GetService ());
 
@@ -693,16 +696,24 @@ Client::Impl::GetServerResource ()
   std::unique_lock<std::mutex> lock(mut);
   TryEnsureFullServerJid (lock);
 
-  FinishSubscriptions ();
+  FinishSubscriptions (lock);
 
   return fullServerJid.resource ();
 }
 
 void
-Client::Impl::FinishSubscriptions ()
+Client::Impl::FinishSubscriptions (std::unique_lock<std::mutex>& lock)
 {
   for (auto& t : subscribeCalls)
-    t.join ();
+    {
+      /* Make sure to unlock temporarily while joining the thread.  Otherwise
+         we might be preventing the XMPP thread to process certain
+         incoming messages (e.g. presences) that need a lock, which would
+         mean that the subscription may never be finished and we deadlock.  */
+      lock.unlock ();
+      t.join ();
+      lock.lock ();
+    }
   subscribeCalls.clear ();
 }
 

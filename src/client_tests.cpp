@@ -538,6 +538,33 @@ TEST_F (ClientNotificationTests, SelectsServerWithNotifications)
   s4.reset ();
 }
 
+TEST_F (ClientNotificationTests, MultipleServersWithNotifications)
+{
+  /* This test verifies that client selection including the notification
+     subscription works fine even if there are multiple servers running
+     with the same pubsub node.  This matches the situation in a typical
+     production environment.  */
+
+  ConnectClient ({"foo"});
+  client.SetTimeout (std::chrono::milliseconds (100));
+
+  auto s1 = ConnectServer ("server 1");
+  s1->AddPubSub (GetServerConfig ().pubsub);
+  auto s2 = ConnectServer ("server 2");
+  s2->AddPubSub (GetServerConfig ().pubsub);
+
+  UpdatableState upd;
+  s1->AddNotification (upd.NewWaiter ("foo"));
+  s2->AddNotification (upd.NewWaiter ("foo"));
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (100));
+  EXPECT_NE (client.GetServerResource (), "");
+
+  /* Disconnect servers before the UpdatableState goes out of scope.  */
+  s1.reset ();
+  s2.reset ();
+}
+
 TEST_F (ClientNotificationTests, WaitForChange)
 {
   ConnectClient ({"foo"});
