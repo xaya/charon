@@ -54,13 +54,7 @@ XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
 
 XmppClient::~XmppClient ()
 {
-  /* If we have a pubsub, disconnect that first, so that it can still use
-     the client to clean up nodes/subscriptions.  */
-  if (pubsub != nullptr)
-    pubsub.reset ();
-
-  if (recvLoop != nullptr)
-    Disconnect ();
+  Disconnect ();
 }
 
 void
@@ -153,6 +147,15 @@ XmppClient::Disconnect ()
 {
   LOG (INFO) << "Disconnecting XMPP client " << jid.full () << "...";
 
+  /* Notify subclasses about the upcoming disconnect, so they can clean up
+     things as needed beforehand.  */
+  HandleDisconnect ();
+
+  /* Make sure to clean up the pubsub service first, so that it will still
+     clean up all its associated nodes and subscriptions before the connection
+     is gone.  */
+  pubsub.reset ();
+
   client.disconnect ();
 
   if (recvLoop != nullptr)
@@ -191,6 +194,8 @@ XmppClient::onDisconnect (const gloox::ConnectionError err)
     }
 
   connectionState = ConnectionState::DISCONNECTED;
+  HandleDisconnect ();
+  pubsub.reset ();
 }
 
 bool

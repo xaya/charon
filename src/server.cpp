@@ -145,6 +145,13 @@ private:
   bool handleIq (const gloox::IQ& iq) override;
   void handleIqID (const gloox::IQ& iq, int context) override;
 
+protected:
+
+  /**
+   * When disconnected, we clean up our notifications.
+   */
+  void HandleDisconnect () override;
+
 public:
 
   explicit IqAnsweringClient (const std::string& v, RpcServer& b,
@@ -291,6 +298,12 @@ Server::IqAnsweringClient::AddNotification (std::unique_ptr<WaiterThread> upd)
   return node;
 }
 
+void
+Server::IqAnsweringClient::HandleDisconnect ()
+{
+  ClearNotifications ();
+}
+
 Server::Server (const std::string& v, RpcServer& b)
   : version(v), backend(b)
 {}
@@ -325,7 +338,6 @@ Server::Disconnect ()
   if (client == nullptr)
     return;
 
-  client->ClearNotifications ();
   client->Disconnect ();
   client.reset ();
 }

@@ -100,6 +100,24 @@ private:
 
   friend class PubSubImpl;
 
+protected:
+
+  /**
+   * Callback that gets triggered when the server either is about to
+   * disconnect (when we do it voluntarily and know about it beforehand),
+   * or when it has been disconnected already and we did not get advance
+   * warning (because e.g. the server just went down).
+   *
+   * The IsConnected() method can be used to check which of these situations
+   * is the case if that's needed.
+   *
+   * This method does nothing by default, but can be used to clean up things
+   * associated to the current connection in subclasses.
+   */
+  virtual void
+  HandleDisconnect ()
+  {}
+
 public:
 
   /**
