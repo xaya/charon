@@ -132,7 +132,7 @@ class Server::IqAnsweringClient : public XmppClient,
 private:
 
   /** The server's version string.  */
-  const std::string& version;
+  const std::string version;
 
   /** The backend server to use for answering requests.  */
   RpcServer& backend;
@@ -304,26 +304,25 @@ Server::IqAnsweringClient::HandleDisconnect ()
   ClearNotifications ();
 }
 
-Server::Server (const std::string& v, RpcServer& b)
-  : version(v), backend(b)
-{}
-
-Server::~Server () = default;
-
-void
-Server::Connect (const std::string& jidStr, const std::string& password,
-                 const int priority)
+Server::Server (const std::string& version, RpcServer& backend,
+                const std::string& jidStr, const std::string& password)
 {
   const gloox::JID jid(jidStr);
   client = std::make_unique<IqAnsweringClient> (version, backend,
                                                 jid, password);
+}
+
+Server::~Server () = default;
+
+void
+Server::Connect (const int priority)
+{
   client->Connect (priority);
 }
 
 void
 Server::AddPubSub (const std::string& service)
 {
-  CHECK (client != nullptr);
   CHECK (!hasPubSub);
 
   const gloox::JID serviceJid(service);
@@ -335,17 +334,12 @@ Server::AddPubSub (const std::string& service)
 void
 Server::Disconnect ()
 {
-  if (client == nullptr)
-    return;
-
   client->Disconnect ();
-  client.reset ();
 }
 
 std::string
 Server::AddNotification (std::unique_ptr<WaiterThread> upd)
 {
-  CHECK (client != nullptr);
   CHECK (hasPubSub);
   return client->AddNotification (std::move (upd));
 }

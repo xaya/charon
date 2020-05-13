@@ -39,12 +39,6 @@ private:
 
   class IqAnsweringClient;
 
-  /** The version string to report.  */
-  const std::string version;
-
-  /** The backing RpcServer instance.  */
-  RpcServer& backend;
-
   /**
    * The XMPP client instance (which is a class defined only in the source
    * file and thus referenced here by pointer).
@@ -56,7 +50,8 @@ private:
 
 public:
 
-  explicit Server (const std::string& v, RpcServer& b);
+  explicit Server (const std::string& version, RpcServer& backend,
+                   const std::string& jid, const std::string& password);
   ~Server ();
 
   Server () = delete;
@@ -64,11 +59,10 @@ public:
   void operator= (const Server&) = delete;
 
   /**
-   * Connects to XMPP with the given JID and password.  Starts processing
+   * Connects to XMPP with the given priority.  Starts processing
    * requests once the connection is established.
    */
-  void Connect (const std::string& jid, const std::string& password,
-                int priority);
+  void Connect (int priority);
 
   /**
    * Adds a pubsub service that can be used for notifications on the XMPP

@@ -283,10 +283,13 @@ protected:
   std::unique_ptr<Server>
   ConnectServer (const std::string& ressource="")
   {
-    auto res = std::make_unique<Server> (SERVER_VERSION, backend);
-    res->Connect (
-        JIDWithResource (GetTestAccount (accServer), ressource).full (),
-        GetTestAccount (accServer).password, 0);
+    const auto& acc = GetTestAccount (accServer);
+    auto res = std::make_unique<Server> (
+        SERVER_VERSION, backend,
+        JIDWithResource (acc, ressource).full (),
+        acc.password);
+
+    res->Connect (0);
     return res;
   }
 

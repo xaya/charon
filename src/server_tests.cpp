@@ -154,7 +154,9 @@ protected:
   ServerTests ()
     : XmppClient(JIDWithoutResource (GetTestAccount (accClient)),
                  GetTestAccount (accClient).password),
-      server(SERVER_VERSION, backend)
+      server(SERVER_VERSION, backend,
+             JIDWithResource (GetTestAccount (accServer), SERVER_RES).full (),
+             GetTestAccount (accServer).password)
   {
     RunWithClient ([] (gloox::Client& c)
       {
@@ -165,9 +167,7 @@ protected:
         c.registerStanzaExtension (new SupportedNotifications ());
       });
 
-    server.Connect (
-        JIDWithResource (GetTestAccount (accServer), SERVER_RES).full (),
-        GetTestAccount (accServer).password, 0);
+    server.Connect (0);
     Connect (0);
   }
 

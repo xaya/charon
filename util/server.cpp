@@ -105,8 +105,9 @@ main (int argc, char** argv)
     }
 
   LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
-  charon::Server srv(FLAGS_backend_version, backend);
-  srv.Connect (FLAGS_server_jid, FLAGS_password, FLAGS_priority);
+  charon::Server srv(FLAGS_backend_version, backend,
+                     FLAGS_server_jid, FLAGS_password);
+  srv.Connect (FLAGS_priority);
 
   if (FLAGS_pubsub_service.empty ())
     {
