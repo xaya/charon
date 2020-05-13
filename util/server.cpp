@@ -104,10 +104,8 @@ main (int argc, char** argv)
       backend.AllowMethod (m);
     }
 
-  LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
   charon::Server srv(FLAGS_backend_version, backend,
                      FLAGS_server_jid, FLAGS_password);
-  srv.Connect (FLAGS_priority);
 
   if (FLAGS_pubsub_service.empty ())
     {
@@ -129,6 +127,9 @@ main (int argc, char** argv)
   if (FLAGS_waitforpendingchange)
     srv.AddNotification (NewWaiter<charon::PendingChangeNotification> (
         "waitforpendingchange"));
+
+  LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
+  srv.Connect (FLAGS_priority);
 
   while (true)
     std::this_thread::sleep_for (std::chrono::seconds (1));

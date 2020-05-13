@@ -130,6 +130,8 @@ public:
 
 };
 
+} // anonymous namespace
+
 /**
  * Test case that runs a Charon server as well as a custom XMPP client for
  * sending IQ requests to the server.
@@ -171,10 +173,23 @@ protected:
     Connect (0);
   }
 
+  /**
+   * Returns the pubsub node corresponding to the given notification
+   * type in our server.
+   */
+  const std::string&
+  GetNotificationNode (const std::string& type) const
+  {
+    return server.GetNotificationNode (type);
+  }
+
 };
 
 constexpr const char* ServerTests::SERVER_RES;
 constexpr const char* ServerTests::SERVER_VERSION;
+
+namespace
+{
 
 /* ************************************************************************** */
 
@@ -309,8 +324,8 @@ TEST_F (ServerPingTests, SupportedNotifications)
 {
   auto upd = UpdatableState::Create ();
   server.AddPubSub (GetServerConfig ().pubsub);
-  const auto node1 = server.AddNotification (upd->NewWaiter ("foo"));
-  const auto node2 = server.AddNotification (upd->NewWaiter ("bar"));
+  server.AddNotification (upd->NewWaiter ("foo"));
+  server.AddNotification (upd->NewWaiter ("bar"));
 
   SendPing (JIDWithoutResource (GetTestAccount (accServer)));
   EXPECT_EQ (WaitForPong (), SERVER_RES);
@@ -319,8 +334,8 @@ TEST_F (ServerPingTests, SupportedNotifications)
   ASSERT_NE (n, nullptr);
   EXPECT_EQ (n->GetService (), GetServerConfig ().pubsub);
   EXPECT_THAT (n->GetNotifications (), ElementsAre (
-    std::make_pair ("bar", node2),
-    std::make_pair ("foo", node1)
+    std::make_pair ("bar", GetNotificationNode ("bar")),
+    std::make_pair ("foo", GetNotificationNode ("foo"))
   ));
 }
 
@@ -476,11 +491,11 @@ TEST_F (ServerNotificationTests, TwoNodes)
 {
   auto s1 = UpdatableState::Create ();
   auto s2 = UpdatableState::Create ();
-  const auto node1 = server.AddNotification (s1->NewWaiter ("foo"));
-  const auto node2 = server.AddNotification (s2->NewWaiter ("bar"));
+  server.AddNotification (s1->NewWaiter ("foo"));
+  server.AddNotification (s2->NewWaiter ("bar"));
 
-  NotificationReceiver r1(*this, "foo", node1);
-  NotificationReceiver r2(*this, "bar", node2);
+  NotificationReceiver r1(*this, "foo", GetNotificationNode ("foo"));
+  NotificationReceiver r2(*this, "bar", GetNotificationNode ("bar"));
 
   s1->SetState ("a", "1");
   s2->SetState ("b", "2");
@@ -493,11 +508,28 @@ TEST_F (ServerNotificationTests, TwoNodes)
   r2.Expect ({"d=4"});
 }
 
+TEST_F (ServerNotificationTests, Reconnect)
+{
+  auto s = UpdatableState::Create ();
+  server.AddNotification (s->NewWaiter ("foo"));
+
+  server.Disconnect ();
+  server.Connect (0);
+
+  NotificationReceiver r(*this, "foo", GetNotificationNode ("foo"));
+
+  s->SetState ("a", "1");
+  r.Expect ({"a=1"});
+
+  s->SetState ("b", "2");
+  r.Expect ({"b=2"});
+}
+
 TEST_F (ServerNotificationTests, MultipleUpdates)
 {
   auto s = UpdatableState::Create ();
-  const auto node = server.AddNotification (s->NewWaiter ("foo"));
-  NotificationReceiver r(*this, "foo", node);
+  server.AddNotification (s->NewWaiter ("foo"));
+  NotificationReceiver r(*this, "foo", GetNotificationNode ("foo"));
 
   s->SetState ("a", "1");
   std::this_thread::sleep_for (std::chrono::milliseconds (50));

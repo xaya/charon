@@ -40,36 +40,47 @@
 namespace charon
 {
 
+/* ************************************************************************** */
+
 namespace
 {
 
 /**
  * An enabled notification on the server.  This mostly wraps the corresponding
  * WaiterThread instance, but also has some more data like the pubsub node's
- * name for updates.
+ * name for updates if the server is connected to XMPP.
  */
 class ServerNotification
 {
 
 private:
 
-  /** The PubSubImpl we use to send notifications.  */
-  PubSubImpl& pubsub;
-
-  /** The PubSub node name.  */
-  std::string node;
-
   /** The underlying WaiterThread doing most of the work.  */
   std::unique_ptr<WaiterThread> thread;
+
+  /**
+   * The PubSubImpl we use to send notifications or null if the
+   * XMPP client is not connected and we are not sending out notifications
+   * for now.
+   */
+  PubSubImpl* pubsub = nullptr;
+
+  /** The PubSub node name (if any).  */
+  std::string node;
+
+  /**
+   * Mutex to lock this between the waiter thread's update handler
+   * and an external thread that may connect/disconnect the pubsub.
+   */
+  std::mutex mut;
 
 public:
 
   /**
-   * Constructs a new instance, taking over the existing WaiterThread.  This
-   * also sets everything else up (pubsub node, update handler) and starts
-   * the waiter thread.
+   * Constructs a new instance for the given WaiterThread.  This also sets
+   * up the update handler and starts the waiter thread.
    */
-  explicit ServerNotification (PubSubImpl& p, std::unique_ptr<WaiterThread> t);
+  explicit ServerNotification (std::unique_ptr<WaiterThread> t);
 
   /**
    * Stops the waiter thread and cleans everything up.
@@ -81,33 +92,61 @@ public:
   void operator= (const ServerNotification&) = delete;
 
   /**
+   * Connects a PubSub implementation and starts publishing there.
+   */
+  void ConnectPubSub (PubSubImpl& p);
+
+  /**
+   * Disconnects the PubSub instance and stops publishing updates.
+   */
+  void DisconnectPubSub ();
+
+  /**
    * Returns the associated node string.
    */
   const std::string&
   GetNode () const
   {
+    CHECK (pubsub != nullptr) << "PubSub is not connected";
     return node;
   }
 
 };
 
-ServerNotification::ServerNotification (PubSubImpl& p,
-                                        std::unique_ptr<WaiterThread> t)
-  : pubsub(p), thread(std::move (t))
+ServerNotification::ServerNotification (std::unique_ptr<WaiterThread> t)
+  : thread(std::move (t))
 {
-  node = pubsub.CreateNode ();
-  LOG (INFO)
-      << "Serving notifications for " << thread->GetType ()
-      << " on PubSub node " << node;
-
   thread->SetUpdateHandler ([this] (const Json::Value& data)
     {
       VLOG (1)
           << "Notifying update for " << thread->GetType ()
           << ":\n" << data;
 
+      /* Locking is a bit tricky here.  The Publish call below may block
+         for some time, because it is waiting for the server response.
+         If the XMPP client is disconnected in the mean time, the waiter
+         is woken up on ~PubSubImpl.  But before that happens, the
+         notification is disconnected from PubSub.
+
+         All this only works if we do not hold the lock on mut while
+         the Publish call is going on.  Thus we just lock while we copy
+         the data we need, and then process the data without keeping
+         onto the lock.  */
+
+      PubSubImpl* p;
+      std::string n;
+      {
+        std::lock_guard<std::mutex> lock(mut);
+        p = pubsub;
+        n = node;
+      }
+
+      if (p == nullptr)
+        return;
+      CHECK (!n.empty ());
+
       const NotificationUpdate payload(thread->GetType (), data);
-      pubsub.Publish (node, payload.CreateTag ());
+      p->Publish (n, payload.CreateTag ());
     });
 
   thread->Start ();
@@ -116,9 +155,37 @@ ServerNotification::ServerNotification (PubSubImpl& p,
 ServerNotification::~ServerNotification ()
 {
   thread->Stop ();
+  thread->ClearUpdateHandler ();
+}
+
+void
+ServerNotification::ConnectPubSub (PubSubImpl& p)
+{
+  std::lock_guard<std::mutex> lock(mut);
+
+  CHECK (pubsub == nullptr) << "There is already a PubSub instance";
+  pubsub = &p;
+
+  node = pubsub->CreateNode ();
+  LOG (INFO)
+      << "Serving notifications for " << thread->GetType ()
+      << " on PubSub node " << node;
+}
+
+void
+ServerNotification::DisconnectPubSub ()
+{
+  std::lock_guard<std::mutex> lock(mut);
+
+  pubsub = nullptr;
+  node.clear ();
+
+  LOG (INFO) << "Stopped PubSub updates for " << thread->GetType ();
 }
 
 } // anonymous namespace
+
+/* ************************************************************************** */
 
 /**
  * The actual working class for our Charon server.  This uses XmppClient for
@@ -137,7 +204,11 @@ private:
   /** The backend server to use for answering requests.  */
   RpcServer& backend;
 
-  /** Active notification updaters.  They are keyed by type string.  */
+  /**
+   * Enabled notifications on this server.  All of them have their waiter
+   * threads running, but they may not be publishing to a PubSub instance
+   * if the XMPP client is currently disconnected.
+   */
   std::map<std::string, std::unique_ptr<ServerNotification>> notifications;
 
   void handleMessage (const gloox::Message& msg,
@@ -159,18 +230,23 @@ public:
                               const std::string& password);
 
   /**
-   * Removes all notifications (as preparation to shutting down).
+   * Adds a new notification updater.  This starts the corresponding waiter
+   * thread immediately, but only starts publishing to a PubSub once the
+   * client is connected.
    */
-  void
-  ClearNotifications ()
-  {
-    notifications.clear ();
-  }
+  void AddNotification (std::unique_ptr<WaiterThread> upd);
 
   /**
-   * Adds a new notification updater and returns the pubsub node.
+   * Connects all notifications to the current PubSub.  This is used to
+   * explicitly enable them if the client has just been connected to XMPP.
    */
-  std::string AddNotification (std::unique_ptr<WaiterThread> upd);
+  void ConnectNotifications ();
+
+  /**
+   * Returns the pubsub node for the given notification type.  This is used
+   * in testing.
+   */
+  const std::string& GetNotificationNode (const std::string& type) const;
 
 };
 
@@ -283,26 +359,40 @@ void
 Server::IqAnsweringClient::handleIqID (const gloox::IQ& iq, const int context)
 {}
 
-std::string
+void
+Server::IqAnsweringClient::HandleDisconnect ()
+{
+  for (auto& n : notifications)
+    n.second->DisconnectPubSub ();
+}
+
+void
 Server::IqAnsweringClient::AddNotification (std::unique_ptr<WaiterThread> upd)
 {
   const auto type = upd->GetType ();
 
-  auto notifier
-      = std::make_unique<ServerNotification> (GetPubSub (), std::move (upd));
-  const auto node = notifier->GetNode ();
+  auto notifier = std::make_unique<ServerNotification> (std::move (upd));
+  if (IsConnected ())
+    notifier->ConnectPubSub (GetPubSub ());
 
   const auto res = notifications.emplace (type, std::move (notifier));
   CHECK (res.second) << "Duplicate notification: " << type;
-
-  return node;
 }
 
 void
-Server::IqAnsweringClient::HandleDisconnect ()
+Server::IqAnsweringClient::ConnectNotifications ()
 {
-  ClearNotifications ();
+  for (auto& n : notifications)
+    n.second->ConnectPubSub (GetPubSub ());
 }
+
+const std::string&
+Server::IqAnsweringClient::GetNotificationNode (const std::string& type) const
+{
+  return notifications.at (type)->GetNode ();
+}
+
+/* ************************************************************************** */
 
 Server::Server (const std::string& version, RpcServer& backend,
                 const std::string& jidStr, const std::string& password)
@@ -313,12 +403,6 @@ Server::Server (const std::string& version, RpcServer& backend,
 }
 
 Server::~Server () = default;
-
-void
-Server::Connect (const int priority)
-{
-  client->Connect (priority);
-}
 
 void
 Server::AddPubSub (const std::string& service)
@@ -332,16 +416,31 @@ Server::AddPubSub (const std::string& service)
 }
 
 void
+Server::AddNotification (std::unique_ptr<WaiterThread> upd)
+{
+  CHECK (hasPubSub);
+  client->AddNotification (std::move (upd));
+}
+
+void
+Server::Connect (const int priority)
+{
+  client->Connect (priority);
+  client->ConnectNotifications ();
+}
+
+void
 Server::Disconnect ()
 {
   client->Disconnect ();
 }
 
-std::string
-Server::AddNotification (std::unique_ptr<WaiterThread> upd)
+const std::string&
+Server::GetNotificationNode (const std::string& type) const
 {
-  CHECK (hasPubSub);
-  return client->AddNotification (std::move (upd));
+  return client->GetNotificationNode (type);
 }
+
+/* ************************************************************************** */
 
 } // namespace charon

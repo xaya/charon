@@ -48,6 +48,14 @@ private:
   /** Whether or not we have a pubsub service.  */
   bool hasPubSub = false;
 
+  /**
+   * Returns the pubsub node for a given notification type.  This is used
+   * in tests.
+   */
+  const std::string& GetNotificationNode (const std::string& type) const;
+
+  friend class ServerTests;
+
 public:
 
   explicit Server (const std::string& version, RpcServer& backend,
@@ -59,30 +67,31 @@ public:
   void operator= (const Server&) = delete;
 
   /**
-   * Connects to XMPP with the given priority.  Starts processing
-   * requests once the connection is established.
-   */
-  void Connect (int priority);
-
-  /**
    * Adds a pubsub service that can be used for notifications on the XMPP
    * server we are connected to.
    */
   void AddPubSub (const std::string& service);
 
   /**
-   * Disconnects the XMPP client and stops processing requests.
-   */
-  void Disconnect ();
-
-  /**
    * Starts serving a new notification on the server.  This must only be called
    * if we have a pubsub service enabled.
    *
-   * Returns the pubsub node that has been created for updates on this
-   * notification type.
+   * If the client is connected already, then this enables the new notification
+   * right away.  Otherwise the notification will be enabled once the client
+   * gets connected (and later again if it reconnects).
    */
-  std::string AddNotification (std::unique_ptr<WaiterThread> upd);
+  void AddNotification (std::unique_ptr<WaiterThread> upd);
+
+  /**
+   * Connects to XMPP with the given priority.  Starts processing
+   * requests once the connection is established.
+   */
+  void Connect (int priority);
+
+  /**
+   * Disconnects the XMPP client and stops processing requests.
+   */
+  void Disconnect ();
 
 };
 
