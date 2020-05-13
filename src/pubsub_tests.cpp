@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -138,6 +138,24 @@ TEST_F (PubSubTests, PublishReceive)
   const auto xml2 = server.Publish (node, "othertag", "other text");
 
   client.ExpectItems ({xml1, xml2});
+}
+
+TEST_F (PubSubTests, Reconnects)
+{
+  std::string node = server.GetPubSub ().CreateNode ();
+  ASSERT_TRUE (client.Subscribe (node));
+  const auto xml1 = server.Publish (node, "mytag", "with some text");
+  client.ExpectItems ({xml1});
+
+  client.Disconnect ();
+  server.Disconnect ();
+  client.Connect (0);
+  server.Connect (0);
+
+  node = server.GetPubSub ().CreateNode ();
+  ASSERT_TRUE (client.Subscribe (node));
+  const auto xml2 = server.Publish (node, "othertag", "other text");
+  client.ExpectItems ({xml2});
 }
 
 TEST_F (PubSubTests, SubscribeAfterFirstPublish)

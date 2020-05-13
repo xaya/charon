@@ -63,6 +63,13 @@ private:
   /** The gloox XMPP client instance.  */
   gloox::Client client;
 
+  /**
+   * PubSub service to use (if any).  If this is not the empty string,
+   * then a pubsub node will be attached on successful connects and
+   * reconnects automatically.
+   */
+  gloox::JID pubsubService;
+
   /** PubSub instance used by this client.  */
   std::unique_ptr<PubSubImpl> pubsub;
 
@@ -90,6 +97,11 @@ private:
    * receive thread calls repeatedly.
    */
   bool Receive ();
+
+  /**
+   * Attaches the PubSubImpl for our configured service.
+   */
+  void AttachPubSub ();
 
   void onConnect () override;
   void onDisconnect (gloox::ConnectionError err) override;
@@ -142,7 +154,7 @@ public:
 
   /**
    * Gives access to the pubsub instance.  Must only be called if one was
-   * initialised with AddPubSub already.
+   * initialised with AddPubSub already and the server is connected.
    */
   PubSubImpl& GetPubSub ();
 

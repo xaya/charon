@@ -58,16 +58,32 @@ XmppClient::~XmppClient ()
 }
 
 void
+XmppClient::AttachPubSub ()
+{
+  CHECK (connectionState == ConnectionState::CONNECTED);
+
+  if (pubsubService)
+    {
+      LOG (INFO) << "Setting up pubsub at " << pubsubService.full ();
+      pubsub = std::make_unique<PubSubImpl> (*this, pubsubService);
+    }
+  else
+    pubsub.reset ();
+}
+
+void
 XmppClient::AddPubSub (const gloox::JID& service)
 {
-  LOG (INFO) << "Setting up pubsub at " << service.full ();
-  pubsub = std::make_unique<PubSubImpl> (*this, service);
+  pubsubService = service.full ();
+  if (connectionState == ConnectionState::CONNECTED)
+    AttachPubSub ();
 }
 
 PubSubImpl&
 XmppClient::GetPubSub ()
 {
   CHECK (pubsub != nullptr);
+  CHECK (connectionState == ConnectionState::CONNECTED);
   return *pubsub;
 }
 
@@ -110,10 +126,20 @@ XmppClient::Connect (const int priority)
         }
     });
 
-  while (connectionState == ConnectionState::CONNECTING)
-    std::this_thread::sleep_for (WAITING_SLEEP);
-
-  return connectionState == ConnectionState::CONNECTED;
+  while (true)
+    switch (connectionState)
+      {
+      case ConnectionState::CONNECTED:
+        AttachPubSub ();
+        return true;
+      case ConnectionState::DISCONNECTED:
+        return false;
+      case ConnectionState::CONNECTING:
+        std::this_thread::sleep_for (WAITING_SLEEP);
+        continue;
+      default:
+        LOG (FATAL) << "Unexpected connection state";
+      }
 }
 
 bool
