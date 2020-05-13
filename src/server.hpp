@@ -84,14 +84,20 @@ public:
 
   /**
    * Connects to XMPP with the given priority.  Starts processing
-   * requests once the connection is established.
+   * requests once the connection is established.  Returns false if the
+   * connection failed.
    */
-  void Connect (int priority);
+  bool Connect (int priority);
 
   /**
    * Disconnects the XMPP client and stops processing requests.
    */
   void Disconnect ();
+
+  /**
+   * Returns true if the server is connected.
+   */
+  bool IsConnected () const;
 
 };
 

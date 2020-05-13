@@ -49,6 +49,63 @@ using testing::IsEmpty;
 
 /* ************************************************************************** */
 
+class ServerConnectionTests : public testing::Test
+{
+
+private:
+
+  UpdatableState::Handle s;
+
+protected:
+
+  TestBackend backend;
+
+  ServerConnectionTests ()
+  {
+    s = UpdatableState::Create ();
+  }
+
+  /**
+   * Adds some notifications to the server to make sure all testing
+   * works properly when they are enabled.
+   */
+  void
+  AddNotifications (Server& srv)
+  {
+    srv.AddPubSub (GetServerConfig ().pubsub);
+    srv.AddNotification (s->NewWaiter ("foo"));
+    srv.AddNotification (s->NewWaiter ("bar"));
+  }
+
+};
+
+TEST_F (ServerConnectionTests, Success)
+{
+  Server server("", backend,
+                JIDWithoutResource (GetTestAccount (0)).full (),
+                GetTestAccount (0).password);
+  AddNotifications (server);
+
+  EXPECT_TRUE (server.Connect (0));
+  EXPECT_TRUE (server.IsConnected ());
+
+  server.Disconnect ();
+  EXPECT_FALSE (server.IsConnected ());
+}
+
+TEST_F (ServerConnectionTests, Failure)
+{
+  Server server("", backend,
+                JIDWithoutResource (GetTestAccount (0)).full (),
+                "wrong password");
+  AddNotifications (server);
+
+  EXPECT_FALSE (server.Connect (0));
+  EXPECT_FALSE (server.IsConnected ());
+}
+
+/* ************************************************************************** */
+
 /**
  * A list of received IQ results.  This is what we use to handle the
  * incoming IQs, and what we use for verifying them later on.

@@ -422,17 +422,26 @@ Server::AddNotification (std::unique_ptr<WaiterThread> upd)
   client->AddNotification (std::move (upd));
 }
 
-void
+bool
 Server::Connect (const int priority)
 {
-  client->Connect (priority);
+  if (!client->Connect (priority))
+    return false;
+
   client->ConnectNotifications ();
+  return true;
 }
 
 void
 Server::Disconnect ()
 {
   client->Disconnect ();
+}
+
+bool
+Server::IsConnected () const
+{
+  return client->IsConnected ();
 }
 
 const std::string&
