@@ -72,7 +72,6 @@ class Client ():
     args.extend (["--server_jid", self.serverJid])
     args.extend (["--password", self.password])
     args.extend (["--methods", ",".join (self.methods)])
-    args.extend (["--waitforchange"])
     args.extend (self.extraArgs)
 
     envVars = dict (os.environ)
@@ -139,7 +138,6 @@ class Server ():
     args.extend (["--password", self.password])
     args.extend (["--pubsub_service", self.pubsub])
     args.extend (["--methods", ",".join (self.methods)])
-    args.extend (["--waitforchange"])
     args.extend (self.extraArgs)
 
     envVars = dict (os.environ)

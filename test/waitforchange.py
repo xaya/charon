@@ -87,7 +87,7 @@ class Waiter:
 
 
 with Methods () as backend, \
-     testcase.Fixture ([]) as t, \
+     testcase.Fixture ([], waitforchange=True) as t, \
      t.runClient () as c:
 
   with t.runServer (backend):

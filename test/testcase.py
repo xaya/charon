@@ -45,8 +45,9 @@ class Fixture (object):
   on the environment and predefined test accounts.
   """
 
-  def __init__ (self, methods):
+  def __init__ (self, methods, waitforchange=False):
     self.methods = methods
+    self.waitforchange = waitforchange
 
   def __enter__ (self):
     randomSuffix = "%08x" % random.getrandbits (32)
@@ -106,6 +107,9 @@ class Fixture (object):
     if methods is None:
       methods = self.methods
 
+    if self.waitforchange:
+      extraArgs.append ("--waitforchange")
+
     acc = self.cfg["accounts"]
     return charonbin.Client (self.basedir, binary, port, methods,
                              self.getAccountJid (acc[0]),
@@ -127,6 +131,9 @@ class Fixture (object):
 
     if methods is None:
       methods = self.methods
+
+    if self.waitforchange:
+      extraArgs.append ("--waitforchange")
 
     acc = self.cfg["accounts"]
     with rpcserver.Server (("localhost", port), obj), \
