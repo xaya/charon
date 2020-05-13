@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ namespace
  * XMPP client connection for use in testing.  It can send messages and
  * receive them (passing on to a ReceivedMessages instance).
  */
-class TestXmppClient : private XmppClient, private gloox::MessageHandler
+class TestXmppClient : public XmppClient, private gloox::MessageHandler
 {
 
 private:
@@ -106,6 +106,30 @@ using XmppClientTests = testing::Test;
 TEST_F (XmppClientTests, Connecting)
 {
   TestXmppClient client(GetTestAccount (0));
+  EXPECT_TRUE (client.IsConnected ());
+}
+
+TEST_F (XmppClientTests, FailedConnection)
+{
+  XmppClient wrongPassword(JIDWithoutResource (GetTestAccount (0)), "wrong");
+  EXPECT_FALSE (wrongPassword.Connect (0));
+  EXPECT_FALSE (wrongPassword.IsConnected ());
+
+  XmppClient invalidServer(gloox::JID ("test@invalid.server"), "password");
+  EXPECT_FALSE (invalidServer.Connect (0));
+  EXPECT_FALSE (invalidServer.IsConnected ());
+}
+
+TEST_F (XmppClientTests, Reconnection)
+{
+  TestXmppClient client(GetTestAccount (0));
+  ASSERT_TRUE (client.IsConnected ());
+
+  client.Disconnect ();
+  ASSERT_FALSE (client.IsConnected ());
+
+  EXPECT_TRUE (client.Connect (0));
+  ASSERT_TRUE (client.IsConnected ());
 }
 
 TEST_F (XmppClientTests, Messages)

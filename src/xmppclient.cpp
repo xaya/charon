@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -40,7 +40,8 @@ constexpr auto WAITING_SLEEP = std::chrono::milliseconds (1);
 } // anonymous namespace
 
 XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
-  : jid(j), client(jid, password)
+  : jid(j), client(jid, password),
+    connectionState(ConnectionState::DISCONNECTED)
 {
   client.registerConnectionListener (this);
   client.logInstance ().registerLogHandler (gloox::LogLevelDebug,
@@ -76,17 +77,30 @@ XmppClient::GetPubSub ()
   return *pubsub;
 }
 
-void
+bool
 XmppClient::Connect (const int priority)
 {
   LOG (INFO)
       << "Connecting to XMPP server with " << jid.full ()
       << " and priority " << priority << "...";
-  CHECK (recvLoop == nullptr);
+
+  /* When the client is disconnected by the server (not through an explicit
+     call to Disconnect), then the receive loop thread will exit but the
+     instance will still be around.  Make sure to clean it up in this case.  */
+  if (recvLoop != nullptr)
+    {
+      stopLoop = true;
+      recvLoop->join ();
+      recvLoop.reset ();
+    }
 
   client.presence ().setPriority (priority);
-  connected = false;
-  CHECK (client.connect (false));
+  connectionState = ConnectionState::CONNECTING;
+  if (!client.connect (false))
+    {
+      CHECK (connectionState == ConnectionState::DISCONNECTED);
+      return false;
+    }
 
   stopLoop = false;
   recvLoop = std::make_unique<std::thread> ([this] ()
@@ -102,8 +116,10 @@ XmppClient::Connect (const int priority)
         }
     });
 
-  while (!connected)
+  while (connectionState == ConnectionState::CONNECTING)
     std::this_thread::sleep_for (WAITING_SLEEP);
+
+  return connectionState == ConnectionState::CONNECTED;
 }
 
 bool
@@ -138,7 +154,6 @@ XmppClient::Disconnect ()
   LOG (INFO) << "Disconnecting XMPP client " << jid.full () << "...";
 
   client.disconnect ();
-  connected = false;
 
   if (recvLoop != nullptr)
     {
@@ -146,6 +161,9 @@ XmppClient::Disconnect ()
       recvLoop->join ();
       recvLoop.reset ();
     }
+
+  while (connectionState != ConnectionState::DISCONNECTED)
+    std::this_thread::sleep_for (WAITING_SLEEP);
 }
 
 void
@@ -153,7 +171,7 @@ XmppClient::onConnect ()
 {
   LOG (INFO)
       << "XMPP connection to the server is established for " << jid.full ();
-  connected = true;
+  connectionState = ConnectionState::CONNECTED;
 }
 
 void
@@ -168,8 +186,11 @@ XmppClient::onDisconnect (const gloox::ConnectionError err)
       break;
 
     default:
-      LOG (FATAL) << "Unexpected disconnect: " << err;
+      LOG (ERROR) << "Unexpected disconnect: " << err;
+      break;
     }
+
+  connectionState = ConnectionState::DISCONNECTED;
 }
 
 bool

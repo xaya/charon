@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -47,6 +47,16 @@ class XmppClient : private gloox::ConnectionListener, private gloox::LogHandler
 
 private:
 
+  /**
+   * Current state of the client.
+   */
+  enum class ConnectionState
+  {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+  };
+
   /** Our JID for the connection.  */
   gloox::JID jid;
 
@@ -64,8 +74,8 @@ private:
   /** Signal for the receive loop to stop.  */
   std::atomic<bool> stopLoop;
 
-  /** Set to true when the connection is established.  */
-  std::atomic<bool> connected;
+  /** Current connection state (set by the onConnect/onDisconnect handlers).  */
+  std::atomic<ConnectionState> connectionState;
 
   /**
    * Lock used to synchronise receives and other client accesses.  This has
@@ -122,13 +132,26 @@ public:
    * Sets up the connection to the server, using the specified priority.
    * Once connected, the receiving loop will be started.  The loop will
    * run until the connection is closed.
+   *
+   * Returns true if the connection was opened successfully, and false
+   * if the connection failed (in which case the client will still be
+   * disconnected after return).
    */
-  void Connect (int priority);
+  bool Connect (int priority);
 
   /**
    * Closes the server connection.
    */
   void Disconnect ();
+
+  /**
+   * Returns true if the client is successfully connected.
+   */
+  bool
+  IsConnected () const
+  {
+    return connectionState == ConnectionState::CONNECTED;
+  }
 
   /**
    * Returns the JID of the connected user.
