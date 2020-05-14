@@ -157,6 +157,8 @@ public:
 
 };
 
+} // anonymous namespace
+
 /**
  * ResultHandler that notifies a condition variable and sets a flag
  * when done.
@@ -165,6 +167,13 @@ class WaiterResultHandler : public GeneralResultHandler
 {
 
 private:
+
+  /**
+   * Associated PubSub instance.  We add ourselves to its list of
+   * waiting handlers on construction and remove ourselves again
+   * in the destructor.
+   */
+  PubSubImpl& pubsub;
 
   /** Mutex for the condition variable and flag.  */
   std::mutex mut;
@@ -175,11 +184,31 @@ private:
   /** Whether or not we are done.  */
   bool done = false;
 
-protected:
+public:
+
+  explicit WaiterResultHandler (PubSubImpl& p)
+    : pubsub(p)
+  {
+    std::lock_guard<std::mutex> lock(pubsub.mutWaitingHandlers);
+    pubsub.waitingHandlers.insert (this);
+  }
+
+  WaiterResultHandler () = delete;
+  WaiterResultHandler (const WaiterResultHandler&) = delete;
+  void operator= (const WaiterResultHandler&) = delete;
+
+  ~WaiterResultHandler ()
+  {
+    std::lock_guard<std::mutex> lock(pubsub.mutWaitingHandlers);
+    pubsub.waitingHandlers.erase (this);
+    pubsub.cvWaitingHandlers.notify_all ();
+  }
 
   /**
    * Signal the action as done.  This should be called from subclasses
-   * from the respective handle... method.
+   * from the respective handle... method.  It may also be called
+   * from the PubSubImpl when the connection is closed down (and thus
+   * we won't get any responses anymore).
    */
   void
   Notify ()
@@ -188,8 +217,6 @@ protected:
     done = true;
     cv.notify_all ();
   }
-
-public:
 
   /**
    * Wait for the result to be done.
@@ -204,6 +231,9 @@ public:
 
 };
 
+namespace
+{
+
 /**
  * ResultHandler that waits for a node creation confirmation.
  */
@@ -216,6 +246,10 @@ private:
   std::string node;
 
 public:
+
+  explicit NodeCreationResultHandler (PubSubImpl& p)
+    : WaiterResultHandler(p)
+  {}
 
   void
   handleNodeCreation (const std::string& id, const gloox::JID& service,
@@ -230,7 +264,6 @@ public:
   const std::string&
   GetNode () const
   {
-    CHECK (!node.empty ());
     return node;
   }
 
@@ -243,6 +276,10 @@ class ItemPublicationResultHandler : public WaiterResultHandler
 {
 
 public:
+
+  explicit ItemPublicationResultHandler (PubSubImpl& p)
+    : WaiterResultHandler(p)
+  {}
 
   void
   handleItemPublication (const std::string& id, const gloox::JID& service,
@@ -267,9 +304,13 @@ class NodeSubscriptionResultHandler : public WaiterResultHandler
 private:
 
   /** Whether or not subscription was successful.  */
-  bool success;
+  bool success = false;
 
 public:
+
+  explicit NodeSubscriptionResultHandler (PubSubImpl& p)
+    : WaiterResultHandler(p)
+  {}
 
   void
   handleSubscriptionResult (const std::string& id, const gloox::JID& service,
@@ -337,6 +378,18 @@ PubSubImpl::~PubSubImpl ()
       for (const auto& node : ownedNodes)
         manager.removeID (manager.deleteNode (service, node, &handler));
     });
+
+  /* Notify all handlers currently waiting for a server reply that it won't
+     come anymore (because we are shutting down / disconnecting) and make sure
+     to wait until all of them are done working with this instance.  */
+  {
+    std::unique_lock<std::mutex> lock(mutWaitingHandlers);
+    for (auto* h : waitingHandlers)
+      h->Notify ();
+
+    while (!waitingHandlers.empty ())
+      cvWaitingHandlers.wait (lock);
+  }
 }
 
 void
@@ -369,7 +422,7 @@ PubSubImpl::handleMessage (const gloox::Message& msg,
 std::string
 PubSubImpl::CreateNode ()
 {
-  NodeCreationResultHandler handler;
+  NodeCreationResultHandler handler(*this);
   std::string id;
   client.RunWithClient ([&] (gloox::Client& c)
     {
@@ -379,12 +432,16 @@ PubSubImpl::CreateNode ()
   handler.Wait ();
 
   const auto& node = handler.GetNode ();
-  ownedNodes.insert (node);
+  if (node.empty ())
+    LOG (WARNING) << "Failed to create pubsub node";
+  else
+    ownedNodes.insert (node);
 
   /* Be extra safe and make sure that the handler is no longer tracked by
-     gloox before it goes out of scope (it should have been removed already
-     when the result was received).  */
-  CHECK (!manager.removeID (id));
+     gloox before it goes out of scope.  It will typically be removed already
+     when the response is processed, but if e.g. the connection was closed
+     and the handler woken because of that, it will still be around.  */
+  manager.removeID (id);
 
   return node;
 }
@@ -400,7 +457,7 @@ PubSubImpl::Publish (const std::string& node, std::unique_ptr<gloox::Tag> data)
   gloox::PubSub::ItemList items;
   items.push_back (item.release ());
 
-  ItemPublicationResultHandler handler;
+  ItemPublicationResultHandler handler(*this);
   std::string id;
   client.RunWithClient ([&] (gloox::Client& c)
     {
@@ -409,13 +466,13 @@ PubSubImpl::Publish (const std::string& node, std::unique_ptr<gloox::Tag> data)
   CHECK (!id.empty ());
   handler.Wait ();
 
-  CHECK (!manager.removeID (id));
+  manager.removeID (id);
 }
 
 bool
 PubSubImpl::SubscribeToNode (const std::string& node, const ItemCallback& cb)
 {
-  NodeSubscriptionResultHandler handler;
+  NodeSubscriptionResultHandler handler(*this);
   std::string id;
   client.RunWithClient ([&] (gloox::Client& c)
     {
@@ -431,7 +488,7 @@ PubSubImpl::SubscribeToNode (const std::string& node, const ItemCallback& cb)
   if (ok)
     subscriptions.emplace (node, cb);
 
-  CHECK (!manager.removeID (id));
+  manager.removeID (id);
   return ok;
 }
 
