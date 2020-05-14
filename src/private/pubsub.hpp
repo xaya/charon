@@ -25,15 +25,18 @@
 #include <gloox/pubsubmanager.h>
 #include <gloox/tag.h>
 
+#include <condition_variable>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 
 namespace charon
 {
 
+class WaiterResultHandler;
 class XmppClient;
 
 /**
@@ -70,8 +73,23 @@ private:
   /** Nodes subscribed to and the corresponding callbacks for items.  */
   std::map<std::string, ItemCallback> subscriptions;
 
+  /**
+   * Handlers for all the operations that are currently active on this instance
+   * (like publication or subscription) and waiting for a server result.
+   * We make sure to wake them up and let them finish before destroying
+   * the instance.
+   */
+  std::set<WaiterResultHandler*> waitingHandlers;
+
+  /** Mutex for locking waitingHandlers.  */
+  std::mutex mutWaitingHandlers;
+  /** Condition variable notified when a waiting handler is done.  */
+  std::condition_variable cvWaitingHandlers;
+
   void handleMessage (const gloox::Message& msg,
                       gloox::MessageSession* session) override;
+
+  friend class WaiterResultHandler;
 
 public:
 

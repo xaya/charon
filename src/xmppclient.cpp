@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -40,7 +40,8 @@ constexpr auto WAITING_SLEEP = std::chrono::milliseconds (1);
 } // anonymous namespace
 
 XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
-  : jid(j), client(jid, password)
+  : jid(j), client(jid, password),
+    connectionState(ConnectionState::DISCONNECTED)
 {
   client.registerConnectionListener (this);
   client.logInstance ().registerLogHandler (gloox::LogLevelDebug,
@@ -53,40 +54,63 @@ XmppClient::XmppClient (const gloox::JID& j, const std::string& password)
 
 XmppClient::~XmppClient ()
 {
-  /* If we have a pubsub, disconnect that first, so that it can still use
-     the client to clean up nodes/subscriptions.  */
-  if (pubsub != nullptr)
-    pubsub.reset ();
+  Disconnect ();
+}
 
-  if (recvLoop != nullptr)
-    Disconnect ();
+void
+XmppClient::AttachPubSub ()
+{
+  CHECK (connectionState == ConnectionState::CONNECTED);
+
+  if (pubsubService)
+    {
+      LOG (INFO) << "Setting up pubsub at " << pubsubService.full ();
+      pubsub = std::make_unique<PubSubImpl> (*this, pubsubService);
+    }
+  else
+    pubsub.reset ();
 }
 
 void
 XmppClient::AddPubSub (const gloox::JID& service)
 {
-  LOG (INFO) << "Setting up pubsub at " << service.full ();
-  pubsub = std::make_unique<PubSubImpl> (*this, service);
+  pubsubService = service.full ();
+  if (connectionState == ConnectionState::CONNECTED)
+    AttachPubSub ();
 }
 
 PubSubImpl&
 XmppClient::GetPubSub ()
 {
   CHECK (pubsub != nullptr);
+  CHECK (connectionState == ConnectionState::CONNECTED);
   return *pubsub;
 }
 
-void
+bool
 XmppClient::Connect (const int priority)
 {
   LOG (INFO)
       << "Connecting to XMPP server with " << jid.full ()
       << " and priority " << priority << "...";
-  CHECK (recvLoop == nullptr);
+
+  /* When the client is disconnected by the server (not through an explicit
+     call to Disconnect), then the receive loop thread will exit but the
+     instance will still be around.  Make sure to clean it up in this case.  */
+  if (recvLoop != nullptr)
+    {
+      stopLoop = true;
+      recvLoop->join ();
+      recvLoop.reset ();
+    }
 
   client.presence ().setPriority (priority);
-  connected = false;
-  CHECK (client.connect (false));
+  connectionState = ConnectionState::CONNECTING;
+  if (!client.connect (false))
+    {
+      CHECK (connectionState == ConnectionState::DISCONNECTED);
+      return false;
+    }
 
   stopLoop = false;
   recvLoop = std::make_unique<std::thread> ([this] ()
@@ -102,8 +126,20 @@ XmppClient::Connect (const int priority)
         }
     });
 
-  while (!connected)
-    std::this_thread::sleep_for (WAITING_SLEEP);
+  while (true)
+    switch (connectionState)
+      {
+      case ConnectionState::CONNECTED:
+        AttachPubSub ();
+        return true;
+      case ConnectionState::DISCONNECTED:
+        return false;
+      case ConnectionState::CONNECTING:
+        std::this_thread::sleep_for (WAITING_SLEEP);
+        continue;
+      default:
+        LOG (FATAL) << "Unexpected connection state";
+      }
 }
 
 bool
@@ -137,8 +173,16 @@ XmppClient::Disconnect ()
 {
   LOG (INFO) << "Disconnecting XMPP client " << jid.full () << "...";
 
+  /* Notify subclasses about the upcoming disconnect, so they can clean up
+     things as needed beforehand.  */
+  HandleDisconnect ();
+
+  /* Make sure to clean up the pubsub service first, so that it will still
+     clean up all its associated nodes and subscriptions before the connection
+     is gone.  */
+  pubsub.reset ();
+
   client.disconnect ();
-  connected = false;
 
   if (recvLoop != nullptr)
     {
@@ -146,6 +190,9 @@ XmppClient::Disconnect ()
       recvLoop->join ();
       recvLoop.reset ();
     }
+
+  while (connectionState != ConnectionState::DISCONNECTED)
+    std::this_thread::sleep_for (WAITING_SLEEP);
 }
 
 void
@@ -153,7 +200,7 @@ XmppClient::onConnect ()
 {
   LOG (INFO)
       << "XMPP connection to the server is established for " << jid.full ();
-  connected = true;
+  connectionState = ConnectionState::CONNECTED;
 }
 
 void
@@ -168,8 +215,13 @@ XmppClient::onDisconnect (const gloox::ConnectionError err)
       break;
 
     default:
-      LOG (FATAL) << "Unexpected disconnect: " << err;
+      LOG (ERROR) << "Unexpected disconnect: " << err;
+      break;
     }
+
+  connectionState = ConnectionState::DISCONNECTED;
+  HandleDisconnect ();
+  pubsub.reset ();
 }
 
 bool

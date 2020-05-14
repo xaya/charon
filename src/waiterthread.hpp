@@ -149,6 +149,11 @@ public:
   Json::Value GetCurrentState () const;
 
   /**
+   * Removes the update handler.
+   */
+  void ClearUpdateHandler ();
+
+  /**
    * Sets / replaces the handler for updates.
    */
   void SetUpdateHandler (const UpdateHandler& h);

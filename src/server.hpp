@@ -39,12 +39,6 @@ private:
 
   class IqAnsweringClient;
 
-  /** The version string to report.  */
-  const std::string version;
-
-  /** The backing RpcServer instance.  */
-  RpcServer& backend;
-
   /**
    * The XMPP client instance (which is a class defined only in the source
    * file and thus referenced here by pointer).
@@ -54,21 +48,23 @@ private:
   /** Whether or not we have a pubsub service.  */
   bool hasPubSub = false;
 
+  /**
+   * Returns the pubsub node for a given notification type.  This is used
+   * in tests.
+   */
+  const std::string& GetNotificationNode (const std::string& type) const;
+
+  friend class ServerTests;
+
 public:
 
-  explicit Server (const std::string& v, RpcServer& b);
+  explicit Server (const std::string& version, RpcServer& backend,
+                   const std::string& jid, const std::string& password);
   ~Server ();
 
   Server () = delete;
   Server (const Server&) = delete;
   void operator= (const Server&) = delete;
-
-  /**
-   * Connects to XMPP with the given JID and password.  Starts processing
-   * requests once the connection is established.
-   */
-  void Connect (const std::string& jid, const std::string& password,
-                int priority);
 
   /**
    * Adds a pubsub service that can be used for notifications on the XMPP
@@ -77,18 +73,31 @@ public:
   void AddPubSub (const std::string& service);
 
   /**
+   * Starts serving a new notification on the server.  This must only be called
+   * if we have a pubsub service enabled.
+   *
+   * If the client is connected already, then this enables the new notification
+   * right away.  Otherwise the notification will be enabled once the client
+   * gets connected (and later again if it reconnects).
+   */
+  void AddNotification (std::unique_ptr<WaiterThread> upd);
+
+  /**
+   * Connects to XMPP with the given priority.  Starts processing
+   * requests once the connection is established.  Returns false if the
+   * connection failed.
+   */
+  bool Connect (int priority);
+
+  /**
    * Disconnects the XMPP client and stops processing requests.
    */
   void Disconnect ();
 
   /**
-   * Starts serving a new notification on the server.  This must only be called
-   * if we have a pubsub service enabled.
-   *
-   * Returns the pubsub node that has been created for updates on this
-   * notification type.
+   * Returns true if the server is connected.
    */
-  std::string AddNotification (std::unique_ptr<WaiterThread> upd);
+  bool IsConnected () const;
 
 };
 

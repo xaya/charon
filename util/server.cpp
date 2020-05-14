@@ -54,6 +54,12 @@ DEFINE_bool (waitforpendingchange, false,
              "If true, enable waitforpendingchange updates");
 
 /**
+ * Time between connection retries if the server gets disconnected.  This is
+ * also the general sleep time in the main loop.
+ */
+const auto RECONNECT_INTERVAL = std::chrono::seconds (5);
+
+/**
  * Constructs a WaiterThread instance for the given notification type, using
  * the given RPC method as long-polling backend call.
  */
@@ -104,9 +110,8 @@ main (int argc, char** argv)
       backend.AllowMethod (m);
     }
 
-  LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
-  charon::Server srv(FLAGS_backend_version, backend);
-  srv.Connect (FLAGS_server_jid, FLAGS_password, FLAGS_priority);
+  charon::Server srv(FLAGS_backend_version, backend,
+                     FLAGS_server_jid, FLAGS_password);
 
   if (FLAGS_pubsub_service.empty ())
     {
@@ -130,7 +135,14 @@ main (int argc, char** argv)
         "waitforpendingchange"));
 
   while (true)
-    std::this_thread::sleep_for (std::chrono::seconds (1));
+    {
+      if (!srv.IsConnected ())
+        {
+          LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
+          srv.Connect (FLAGS_priority);
+        }
+      std::this_thread::sleep_for (RECONNECT_INTERVAL);
+    }
 
   return EXIT_SUCCESS;
 }

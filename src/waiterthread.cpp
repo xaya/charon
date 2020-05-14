@@ -90,6 +90,14 @@ WaiterThread::GetCurrentState () const
 }
 
 void
+WaiterThread::ClearUpdateHandler ()
+{
+  std::lock_guard<std::mutex> lock(mut);
+  cb = UpdateHandler ();
+  CHECK (!cb);
+}
+
+void
 WaiterThread::SetUpdateHandler (const UpdateHandler& h)
 {
   std::lock_guard<std::mutex> lock(mut);

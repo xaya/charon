@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019  Autonomous Worlds Ltd
+    Copyright (C) 2019-2020  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -47,11 +47,28 @@ class XmppClient : private gloox::ConnectionListener, private gloox::LogHandler
 
 private:
 
+  /**
+   * Current state of the client.
+   */
+  enum class ConnectionState
+  {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+  };
+
   /** Our JID for the connection.  */
   gloox::JID jid;
 
   /** The gloox XMPP client instance.  */
   gloox::Client client;
+
+  /**
+   * PubSub service to use (if any).  If this is not the empty string,
+   * then a pubsub node will be attached on successful connects and
+   * reconnects automatically.
+   */
+  gloox::JID pubsubService;
 
   /** PubSub instance used by this client.  */
   std::unique_ptr<PubSubImpl> pubsub;
@@ -64,8 +81,8 @@ private:
   /** Signal for the receive loop to stop.  */
   std::atomic<bool> stopLoop;
 
-  /** Set to true when the connection is established.  */
-  std::atomic<bool> connected;
+  /** Current connection state (set by the onConnect/onDisconnect handlers).  */
+  std::atomic<ConnectionState> connectionState;
 
   /**
    * Lock used to synchronise receives and other client accesses.  This has
@@ -81,6 +98,11 @@ private:
    */
   bool Receive ();
 
+  /**
+   * Attaches the PubSubImpl for our configured service.
+   */
+  void AttachPubSub ();
+
   void onConnect () override;
   void onDisconnect (gloox::ConnectionError err) override;
   bool onTLSConnect (const gloox::CertInfo& info) override;
@@ -89,6 +111,24 @@ private:
                   const std::string& msg) override;
 
   friend class PubSubImpl;
+
+protected:
+
+  /**
+   * Callback that gets triggered when the server either is about to
+   * disconnect (when we do it voluntarily and know about it beforehand),
+   * or when it has been disconnected already and we did not get advance
+   * warning (because e.g. the server just went down).
+   *
+   * The IsConnected() method can be used to check which of these situations
+   * is the case if that's needed.
+   *
+   * This method does nothing by default, but can be used to clean up things
+   * associated to the current connection in subclasses.
+   */
+  virtual void
+  HandleDisconnect ()
+  {}
 
 public:
 
@@ -114,7 +154,7 @@ public:
 
   /**
    * Gives access to the pubsub instance.  Must only be called if one was
-   * initialised with AddPubSub already.
+   * initialised with AddPubSub already and the server is connected.
    */
   PubSubImpl& GetPubSub ();
 
@@ -122,13 +162,26 @@ public:
    * Sets up the connection to the server, using the specified priority.
    * Once connected, the receiving loop will be started.  The loop will
    * run until the connection is closed.
+   *
+   * Returns true if the connection was opened successfully, and false
+   * if the connection failed (in which case the client will still be
+   * disconnected after return).
    */
-  void Connect (int priority);
+  bool Connect (int priority);
 
   /**
    * Closes the server connection.
    */
   void Disconnect ();
+
+  /**
+   * Returns true if the client is successfully connected.
+   */
+  bool
+  IsConnected () const
+  {
+    return connectionState == ConnectionState::CONNECTED;
+  }
 
   /**
    * Returns the JID of the connected user.
