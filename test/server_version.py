@@ -32,13 +32,14 @@ class Methods:
     return self.returnValue
 
 
-right = Methods ("right")
-left = Methods ("left")
+if __name__ == "__main__":
+  right = Methods ("right")
+  left = Methods ("left")
 
-with testcase.Fixture (["test"]) as t, \
-     t.runServer (right, extraArgs=["--backend_version", "right"]), \
-     t.runServer (left, extraArgs=["--backend_version", "left"]), \
-     t.runClient (extraArgs=["--backend_version", "right"]) as cr, \
-     t.runClient (extraArgs=["--backend_version", "left"]) as cl:
-  t.assertEqual (cr.rpc.test (), "right")
-  t.assertEqual (cl.rpc.test (), "left")
+  with testcase.Fixture (["test"]) as t, \
+       t.runServer (right, extraArgs=["--backend_version", "right"]), \
+       t.runServer (left, extraArgs=["--backend_version", "left"]), \
+       t.runClient (extraArgs=["--backend_version", "right"]) as cr, \
+       t.runClient (extraArgs=["--backend_version", "left"]) as cl:
+    t.assertEqual (cr.rpc.test (), "right")
+    t.assertEqual (cl.rpc.test (), "left")

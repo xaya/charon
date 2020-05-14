@@ -86,36 +86,37 @@ class Waiter:
     return self.result
 
 
-with Methods () as backend, \
-     testcase.Fixture ([], waitforchange=True) as t, \
-     t.runClient () as c:
+if __name__ == "__main__":
+  with Methods () as backend, \
+       testcase.Fixture ([], waitforchange=True) as t, \
+       t.runClient () as c:
 
-  with t.runServer (backend):
-    t.mainLogger.info ("Testing waitforchange update...")
+    with t.runServer (backend):
+      t.mainLogger.info ("Testing waitforchange update...")
 
-    w = Waiter (c.rpc.waitforchange, "")
+      w = Waiter (c.rpc.waitforchange, "")
 
-    # Give the client time to finish selecting the server.  This has only
-    # been triggered by the first call above.
-    time.sleep (1)
+      # Give the client time to finish selecting the server.  This has only
+      # been triggered by the first call above.
+      time.sleep (1)
 
-    w.assertRunning ()
-    backend.update ("first")
-    t.assertEqual (w.wait (), "first")
+      w.assertRunning ()
+      backend.update ("first")
+      t.assertEqual (w.wait (), "first")
 
-    w = Waiter (c.rpc.waitforchange, "other")
-    t.assertEqual (w.wait (), "first")
+      w = Waiter (c.rpc.waitforchange, "other")
+      t.assertEqual (w.wait (), "first")
 
-    w = Waiter (c.rpc.waitforchange, "")
-    w.assertRunning ()
-    backend.update ("second")
-    t.assertEqual (w.wait (), "second")
+      w = Waiter (c.rpc.waitforchange, "")
+      w.assertRunning ()
+      backend.update ("second")
+      t.assertEqual (w.wait (), "second")
 
-  t.mainLogger.info ("Testing server reselection...")
-  with t.runServer (backend):
-    w = Waiter (c.rpc.waitforchange, "")
-    time.sleep (1)
+    t.mainLogger.info ("Testing server reselection...")
+    with t.runServer (backend):
+      w = Waiter (c.rpc.waitforchange, "")
+      time.sleep (1)
 
-    w.assertRunning ()
-    backend.update ("third")
-    t.assertEqual (w.wait (), "third")
+      w.assertRunning ()
+      backend.update ("third")
+      t.assertEqual (w.wait (), "third")

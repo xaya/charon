@@ -53,18 +53,19 @@ def test (t, methods, extraArgs):
     t.expectRpcError (".*METHOD_NOT_FOUND.*", c.rpc.doNotCall)
 
 
-backend = Methods ()
-with testcase.Fixture ([]) as t:
+if __name__ == "__main__":
+  backend = Methods ()
+  with testcase.Fixture ([]) as t:
 
-  t.mainLogger.info ("Just --methods...")
-  test (t, ["echo"], [])
+    t.mainLogger.info ("Just --methods...")
+    test (t, ["echo"], [])
 
-  t.mainLogger.info ("With --methods and --methods_exclude...")
-  test (t, ["echo", "doNotCall"], ["--methods_exclude", "doNotCall"])
+    t.mainLogger.info ("With --methods and --methods_exclude...")
+    test (t, ["echo", "doNotCall"], ["--methods_exclude", "doNotCall"])
 
-  t.mainLogger.info ("JSON specification...")
-  srcDir = os.getenv ("srcdir")
-  if not srcDir:
-    srcDir = "."
-  specFile = os.path.join (srcDir, "testspec.json")
-  test (t, [], ["--methods_json_spec", specFile])
+    t.mainLogger.info ("JSON specification...")
+    srcDir = os.getenv ("srcdir")
+    if not srcDir:
+      srcDir = "."
+    specFile = os.path.join (srcDir, "testspec.json")
+    test (t, [], ["--methods_json_spec", specFile])

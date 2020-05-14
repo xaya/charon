@@ -37,18 +37,19 @@ class Methods:
     raise AssertionError ("invalid forwarded call")
 
 
-backend = Methods ()
-with testcase.Fixture (backend.methods) as t, \
-     t.runClient () as c:
+if __name__ == "__main__":
+  backend = Methods ()
+  with testcase.Fixture (backend.methods) as t, \
+       t.runClient () as c:
 
-  with t.runServer (backend):
-    t.mainLogger.info ("Testing successful call forwarding...")
-    t.assertEqual (c.rpc.echo ("bla"), "bla")
-    t.expectRpcError (".*my error.*", c.rpc.error, "my error")
+    with t.runServer (backend):
+      t.mainLogger.info ("Testing successful call forwarding...")
+      t.assertEqual (c.rpc.echo ("bla"), "bla")
+      t.expectRpcError (".*my error.*", c.rpc.error, "my error")
 
-    t.mainLogger.info ("Invalid method call...")
-    t.expectRpcError (".*METHOD_NOT_FOUND.*", c.rpc.doNotCall)
+      t.mainLogger.info ("Invalid method call...")
+      t.expectRpcError (".*METHOD_NOT_FOUND.*", c.rpc.doNotCall)
 
-  t.mainLogger.info ("Testing server reselection...")
-  with t.runServer (backend):
-    t.assertEqual (c.rpc.echo ("success"), "success")
+    t.mainLogger.info ("Testing server reselection...")
+    with t.runServer (backend):
+      t.assertEqual (c.rpc.echo ("success"), "success")
