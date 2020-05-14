@@ -211,6 +211,12 @@ private:
    */
   std::map<std::string, std::unique_ptr<ServerNotification>> notifications;
 
+  /**
+   * Set to true when all is fully set up and ready, i.e. once all notification
+   * pubsubs have been set up.  Only then does the server reply to pings.
+   */
+  bool ready = false;
+
   void handleMessage (const gloox::Message& msg,
                       gloox::MessageSession* session) override;
   bool handleIq (const gloox::IQ& iq) override;
@@ -278,6 +284,14 @@ Server::IqAnsweringClient::handleMessage (const gloox::Message& msg,
   auto* ping = msg.findExtension<PingMessage> (PingMessage::EXT_TYPE);
   if (ping != nullptr)
     {
+      if (!ready)
+        {
+          LOG (WARNING)
+              << "Server is not ready yet, ignoring ping from "
+              << msg.from ().full ();
+          return;
+        }
+
       LOG (INFO) << "Processing ping from " << msg.from ().full ();
 
       gloox::Presence response(gloox::Presence::Available, msg.from ());
@@ -290,8 +304,10 @@ Server::IqAnsweringClient::handleMessage (const gloox::Message& msg,
               = std::make_unique<SupportedNotifications> (service);
 
           for (const auto& entry : notifications)
-            notificationInfo->AddNotification (entry.first,
-                                               entry.second->GetNode ());
+            {
+              const auto& node = entry.second->GetNode ();
+              notificationInfo->AddNotification (entry.first, node);
+            }
 
           response.addExtension (notificationInfo.release ());
         }
@@ -362,6 +378,7 @@ Server::IqAnsweringClient::handleIqID (const gloox::IQ& iq, const int context)
 void
 Server::IqAnsweringClient::HandleDisconnect ()
 {
+  ready = false;
   for (auto& n : notifications)
     n.second->DisconnectPubSub ();
 }
@@ -384,6 +401,7 @@ Server::IqAnsweringClient::ConnectNotifications ()
 {
   for (auto& n : notifications)
     n.second->ConnectPubSub (GetPubSub ());
+  ready = true;
 }
 
 const std::string&
