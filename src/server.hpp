@@ -22,8 +22,10 @@
 #include "rpcserver.hpp"
 #include "waiterthread.hpp"
 
+#include <condition_variable>
 #include <memory>
 #include <string>
+#include <thread>
 
 namespace charon
 {
@@ -57,6 +59,8 @@ private:
   friend class ServerTests;
 
 public:
+
+  class ReconnectLoop;
 
   explicit Server (const std::string& version, RpcServer& backend,
                    const std::string& jid, const std::string& password);
@@ -98,6 +102,55 @@ public:
    * Returns true if the server is connected.
    */
   bool IsConnected () const;
+
+};
+
+/**
+ * This is a utility class that runs a "main loop" for a Server instance.
+ * It checks periodically if the Server is still connected; if not, it tries
+ * to reconnect.
+ */
+class Server::ReconnectLoop
+{
+
+private:
+
+  /** The server instance controlled by the loop.  */
+  Server& srv;
+
+  /** The time to wait between connection attempts.  */
+  const std::chrono::milliseconds interval;
+
+  /** Set to false to signal the running loop to stop.  */
+  bool shouldStop;
+
+  /** Mutex for the cv wait.  */
+  std::mutex mut;
+  /** Condition variable notified when we should stop.  */
+  std::condition_variable cv;
+
+  /** The looping thread (if any).  */
+  std::unique_ptr<std::thread> loop;
+
+public:
+
+  template <typename Rep, typename Period>
+    explicit ReconnectLoop (Server& s,
+                            const std::chrono::duration<Rep, Period>& i)
+    : srv(s), interval(i)
+  {}
+
+  /**
+   * Starts the server main loop (which will run on a separate thread).
+   * This will connect the server and then attempt to keep it connected.
+   */
+  void Start (int priority);
+
+  /**
+   * Stops the server main loop.  This will stop the looping thread,
+   * disconnect the server and join the loop thread.
+   */
+  void Stop ();
 
 };
 

@@ -134,15 +134,14 @@ main (int argc, char** argv)
     srv.AddNotification (NewWaiter<charon::PendingChangeNotification> (
         "waitforpendingchange"));
 
+  LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
+
+  charon::Server::ReconnectLoop loop(srv, RECONNECT_INTERVAL);
+  loop.Start (FLAGS_priority);
+
+  /* Just wait forever (until the process is terminated by signal).  */
   while (true)
-    {
-      if (!srv.IsConnected ())
-        {
-          LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
-          srv.Connect (FLAGS_priority);
-        }
-      std::this_thread::sleep_for (RECONNECT_INTERVAL);
-    }
+    std::this_thread::sleep_for (std::chrono::seconds (1));
 
   return EXIT_SUCCESS;
 }

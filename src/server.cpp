@@ -452,4 +452,45 @@ Server::GetNotificationNode (const std::string& type) const
 
 /* ************************************************************************** */
 
+void
+Server::ReconnectLoop::Start (const int priority)
+{
+  CHECK (loop == nullptr) << "ReconnectLoop is already running";
+
+  shouldStop = false;
+  loop = std::make_unique<std::thread> ([this, priority] ()
+    {
+      std::unique_lock<std::mutex> lock(mut);
+
+      while (!shouldStop)
+        {
+          if (!srv.IsConnected ())
+            srv.Connect (priority);
+
+          cv.wait_for (lock, interval);
+        }
+
+      /* When the loop has been stopped, disconnect the server.  */
+      if (srv.IsConnected ())
+        srv.Disconnect ();
+    });
+}
+
+void
+Server::ReconnectLoop::Stop ()
+{
+  CHECK (loop != nullptr) << "ReconnectLoop is not running";
+
+  {
+    std::lock_guard<std::mutex> lock(mut);
+    shouldStop = true;
+    cv.notify_all ();
+  }
+
+  loop->join ();
+  loop.reset ();
+}
+
+/* ************************************************************************** */
+
 } // namespace charon

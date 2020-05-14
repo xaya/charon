@@ -599,5 +599,56 @@ TEST_F (ServerNotificationTests, MultipleUpdates)
 
 /* ************************************************************************** */
 
+class ServerReconnectLoopTests : public testing::Test
+{
+
+private:
+
+  TestBackend backend;
+
+protected:
+
+  Server server;
+
+  ServerReconnectLoopTests ()
+    : server("", backend,
+             JIDWithoutResource (GetTestAccount (0)).full (),
+             GetTestAccount (0).password)
+  {}
+
+};
+
+TEST_F (ServerReconnectLoopTests, Reconnects)
+{
+  Server::ReconnectLoop loop(server, std::chrono::milliseconds (100));
+  loop.Start (0);
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+  ASSERT_TRUE (server.IsConnected ());
+
+  server.Disconnect ();
+  ASSERT_FALSE (server.IsConnected ());
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+  ASSERT_TRUE (server.IsConnected ());
+
+  loop.Stop ();
+  ASSERT_FALSE (server.IsConnected ());
+}
+
+TEST_F (ServerReconnectLoopTests, QuickShutdown)
+{
+  Server::ReconnectLoop loop(server, std::chrono::seconds (100));
+  loop.Start (0);
+
+  std::this_thread::sleep_for (std::chrono::milliseconds (500));
+  ASSERT_TRUE (server.IsConnected ());
+
+  loop.Stop ();
+  ASSERT_FALSE (server.IsConnected ());
+}
+
+/* ************************************************************************** */
+
 } // anonymous namespace
 } // namespace charon
