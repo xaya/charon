@@ -165,6 +165,10 @@ public:
  * For tests, we use state in the JSON form {"id":"foo", "value":"bar"}, where
  * "foo" is the identifier of the state, and "bar" some other value to make
  * it comparable and distinguishable as needed in tests.
+ *
+ * Since the instances need to stay around while all attached waiter threads
+ * are there, we only actually deal with shared pointers to them.  In tests,
+ * a new state should be created with UpdatableState::Create.
  */
 class UpdatableState
 {
@@ -172,6 +176,13 @@ class UpdatableState
 private:
 
   class Waiter;
+
+  /**
+   * Instances are always managed by a std::shared_ptr.  This holds a reference
+   * to the instance itself, so that it can construct more shared_ptr instances
+   * as needed for NewWaiter.
+   */
+  std::weak_ptr<UpdatableState> self;
 
   /** The current state JSON.  */
   Json::Value state;
@@ -188,18 +199,27 @@ private:
    */
   unsigned waitCounter = 0;
 
+  UpdatableState () = default;
+
 public:
 
-  class Notification;
+  /** The type used in external code to hold instances.  */
+  using Handle = std::shared_ptr<UpdatableState>;
 
-  UpdatableState () = default;
+  class Notification;
 
   UpdatableState (const UpdatableState&) = delete;
   void operator= (const UpdatableState&) = delete;
 
   /**
+   * Constructs a new instance wrapped into a shared pointer.
+   */
+  static Handle Create ();
+
+  /**
    * Constructs a new WaiterThread instance with the given type string
-   * and waiting for updates on this state.
+   * and waiting for updates on this state.  It will hold a reference to
+   * this instance's shared pointer.
    */
   std::unique_ptr<WaiterThread> NewWaiter (const std::string& type);
 

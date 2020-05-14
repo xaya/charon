@@ -189,27 +189,27 @@ class UpdatableState::Waiter : public UpdateWaiter
 private:
 
   /** The underlying state.  */
-  UpdatableState& ref;
+  std::shared_ptr<UpdatableState> ref;
 
 public:
 
-  explicit Waiter (UpdatableState& s)
-    : ref(s)
+  explicit Waiter (std::shared_ptr<UpdatableState> s)
+    : ref(std::move (s))
   {}
 
   bool
   WaitForUpdate (Json::Value& newState) override
   {
-    std::unique_lock<std::mutex> lock(ref.mut);
+    std::unique_lock<std::mutex> lock(ref->mut);
 
-    ++ref.waitCounter;
-    if (ref.waitCounter % 2 == 0)
+    ++ref->waitCounter;
+    if (ref->waitCounter % 2 == 0)
       return false;
 
-    ref.cv.wait_for (lock, std::chrono::milliseconds (10));
+    ref->cv.wait_for (lock, std::chrono::milliseconds (10));
 
-    newState = ref.state;
-    return !ref.state.isNull ();
+    newState = ref->state;
+    return !ref->state.isNull ();
   }
 
 };
@@ -228,6 +228,14 @@ Json::Value
 UpdatableState::Notification::AlwaysBlockId () const
 {
   return "always block";
+}
+
+UpdatableState::Handle
+UpdatableState::Create ()
+{
+  Handle res(new UpdatableState ());
+  res->self = res;
+  return res;
 }
 
 Json::Value
@@ -252,8 +260,11 @@ UpdatableState::SetState (const std::string& id, const std::string& value)
 std::unique_ptr<WaiterThread>
 UpdatableState::NewWaiter (const std::string& type)
 {
-  return std::make_unique<WaiterThread> (std::make_unique<Notification> (type),
-                                         std::make_unique<Waiter> (*this));
+  auto notification = std::make_unique<Notification> (type);
+  CHECK (!self.expired ());
+  auto waiter = std::make_unique<Waiter> (self.lock ());
+  return std::make_unique<WaiterThread> (std::move (notification),
+                                         std::move (waiter));
 }
 
 /* ************************************************************************** */

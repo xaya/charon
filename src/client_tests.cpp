@@ -516,26 +516,20 @@ TEST_F (ClientNotificationTests, SelectsServerWithNotifications)
   auto s3 = ConnectServer ("partial notifications");
   s3->AddPubSub (GetServerConfig ().pubsub);
 
-  UpdatableState upd;
-  s3->AddNotification (upd.NewWaiter ("foo"));
-  s3->AddNotification (upd.NewWaiter ("baz"));
+  auto upd = UpdatableState::Create ();
+  s3->AddNotification (upd->NewWaiter ("foo"));
+  s3->AddNotification (upd->NewWaiter ("baz"));
 
   std::this_thread::sleep_for (std::chrono::milliseconds (100));
   EXPECT_EQ (client.GetServerResource (), "");
 
   auto s4 = ConnectServer ("good");
   s4->AddPubSub (GetServerConfig ().pubsub);
-  s4->AddNotification (upd.NewWaiter ("foo"));
-  s4->AddNotification (upd.NewWaiter ("bar"));
+  s4->AddNotification (upd->NewWaiter ("foo"));
+  s4->AddNotification (upd->NewWaiter ("bar"));
 
   std::this_thread::sleep_for (std::chrono::milliseconds (100));
   EXPECT_EQ (client.GetServerResource (), "good");
-
-  /* Disconnect servers before the UpdatableState goes out of scope.  */
-  s1.reset ();
-  s2.reset ();
-  s3.reset ();
-  s4.reset ();
 }
 
 TEST_F (ClientNotificationTests, MultipleServersWithNotifications)
@@ -553,16 +547,12 @@ TEST_F (ClientNotificationTests, MultipleServersWithNotifications)
   auto s2 = ConnectServer ("server 2");
   s2->AddPubSub (GetServerConfig ().pubsub);
 
-  UpdatableState upd;
-  s1->AddNotification (upd.NewWaiter ("foo"));
-  s2->AddNotification (upd.NewWaiter ("foo"));
+  auto upd = UpdatableState::Create ();
+  s1->AddNotification (upd->NewWaiter ("foo"));
+  s2->AddNotification (upd->NewWaiter ("foo"));
 
   std::this_thread::sleep_for (std::chrono::milliseconds (100));
   EXPECT_NE (client.GetServerResource (), "");
-
-  /* Disconnect servers before the UpdatableState goes out of scope.  */
-  s1.reset ();
-  s2.reset ();
 }
 
 TEST_F (ClientNotificationTests, WaitForChange)
@@ -572,8 +562,8 @@ TEST_F (ClientNotificationTests, WaitForChange)
   auto s = ConnectServer ();
   s->AddPubSub (GetServerConfig ().pubsub);
 
-  UpdatableState upd;
-  s->AddNotification (upd.NewWaiter ("foo"));
+  auto upd = UpdatableState::Create ();
+  s->AddNotification (upd->NewWaiter ("foo"));
 
   /* Force subscriptions to be finalised by now.  */
   client.GetServerResource ();
@@ -581,7 +571,7 @@ TEST_F (ClientNotificationTests, WaitForChange)
   auto w = CallWaitForChange ("foo", "");
   w->ExpectRunning ();
 
-  upd.SetState ("a", "first");
+  upd->SetState ("a", "first");
   w->Expect ("a", "first");
 
   w = CallWaitForChange ("foo", "x");
@@ -590,10 +580,8 @@ TEST_F (ClientNotificationTests, WaitForChange)
   w = CallWaitForChange ("foo", "a");
   w->ExpectRunning ();
 
-  upd.SetState ("b", "second");
+  upd->SetState ("b", "second");
   w->Expect ("b", "second");
-
-  s.reset ();
 }
 
 TEST_F (ClientNotificationTests, AlwaysBlock)
@@ -603,23 +591,21 @@ TEST_F (ClientNotificationTests, AlwaysBlock)
   auto s = ConnectServer ();
   s->AddPubSub (GetServerConfig ().pubsub);
 
-  UpdatableState upd;
-  s->AddNotification (upd.NewWaiter ("foo"));
+  auto upd = UpdatableState::Create ();
+  s->AddNotification (upd->NewWaiter ("foo"));
 
   /* Force subscriptions to be finalised by now.  */
   client.GetServerResource ();
 
-  upd.SetState ("a", "first");
+  upd->SetState ("a", "first");
 
   auto w = CallWaitForChange ("foo", "x");
   w->Expect ("a", "first");
 
   w = CallWaitForChange ("foo", "always block");
   w->ExpectRunning ();
-  upd.SetState ("b", "second");
+  upd->SetState ("b", "second");
   w->Expect ("b", "second");
-
-  s.reset ();
 }
 
 TEST_F (ClientNotificationTests, TwoNotifications)
@@ -629,10 +615,10 @@ TEST_F (ClientNotificationTests, TwoNotifications)
   auto s = ConnectServer ();
   s->AddPubSub (GetServerConfig ().pubsub);
 
-  UpdatableState upd1;
-  s->AddNotification (upd1.NewWaiter ("foo"));
-  UpdatableState upd2;
-  s->AddNotification (upd2.NewWaiter ("bar"));
+  auto upd1 = UpdatableState::Create ();
+  s->AddNotification (upd1->NewWaiter ("foo"));
+  auto upd2 = UpdatableState::Create ();
+  s->AddNotification (upd2->NewWaiter ("bar"));
 
   client.GetServerResource ();
 
@@ -640,14 +626,12 @@ TEST_F (ClientNotificationTests, TwoNotifications)
   auto w2 = CallWaitForChange ("bar", "");
 
   w1->ExpectRunning ();
-  upd1.SetState ("a", "first");
+  upd1->SetState ("a", "first");
   w1->Expect ("a", "first");
 
   w2->ExpectRunning ();
-  upd2.SetState ("a", "second");
+  upd2->SetState ("a", "second");
   w2->Expect ("a", "second");
-
-  s.reset ();
 }
 
 TEST_F (ClientNotificationTests, TwoServers)
@@ -656,42 +640,39 @@ TEST_F (ClientNotificationTests, TwoServers)
 
   auto s1 = ConnectServer ("srv1");
   s1->AddPubSub (GetServerConfig ().pubsub);
-  UpdatableState upd1;
-  s1->AddNotification (upd1.NewWaiter ("foo"));
+  auto upd1 = UpdatableState::Create ();
+  s1->AddNotification (upd1->NewWaiter ("foo"));
 
   ASSERT_EQ (client.GetServerResource (), "srv1");
 
   auto s2 = ConnectServer ("srv2");
   s2->AddPubSub (GetServerConfig ().pubsub);
-  UpdatableState upd2;
-  s2->AddNotification (upd1.NewWaiter ("foo"));
+  auto upd2 = UpdatableState::Create ();
+  s2->AddNotification (upd2->NewWaiter ("foo"));
 
   auto w = CallWaitForChange ("foo", "always block");
-  upd2.SetState ("a", "wrong");
+  upd2->SetState ("a", "wrong");
   w->ExpectRunning ();
-  upd1.SetState ("a", "correct");
+  upd1->SetState ("a", "correct");
   w->Expect ("a", "correct");
-
-  s1.reset ();
-  s2.reset ();
 }
 
 TEST_F (ClientNotificationTests, ServerReselection)
 {
   ConnectClient ({"foo"});
 
-  UpdatableState upd;
+  auto upd = UpdatableState::Create ();
 
   auto s = ConnectServer ("srv1");
   s->AddPubSub (GetServerConfig ().pubsub);
-  s->AddNotification (upd.NewWaiter ("foo"));
+  s->AddNotification (upd->NewWaiter ("foo"));
 
   EXPECT_EQ (client.GetServerResource (), "srv1");
   auto w = CallWaitForChange ("foo", "");
 
   s = ConnectServer ("srv2");
   s->AddPubSub (GetServerConfig ().pubsub);
-  s->AddNotification (upd.NewWaiter ("foo"));
+  s->AddNotification (upd->NewWaiter ("foo"));
 
   /* Sleep a bit to make sure the client got notified about the disconnect.  */
   std::this_thread::sleep_for (std::chrono::milliseconds (500));
@@ -701,7 +682,7 @@ TEST_F (ClientNotificationTests, ServerReselection)
   EXPECT_EQ (client.GetServerResource (), "srv2");
 
   w->ExpectRunning ();
-  upd.SetState ("a", "value");
+  upd->SetState ("a", "value");
   w->Expect ("a", "value");
 
   /* Try again.  This time we trigger reselection through the call itself,
@@ -709,17 +690,15 @@ TEST_F (ClientNotificationTests, ServerReselection)
      before updating the server state.  */
   s = ConnectServer ("srv3");
   s->AddPubSub (GetServerConfig ().pubsub);
-  s->AddNotification (upd.NewWaiter ("foo"));
+  s->AddNotification (upd->NewWaiter ("foo"));
 
   std::this_thread::sleep_for (std::chrono::milliseconds (500));
 
   w = CallWaitForChange ("foo", "always block");
   EXPECT_EQ (client.GetServerResource (), "srv3");
   w->ExpectRunning ();
-  upd.SetState ("b", "value 2");
+  upd->SetState ("b", "value 2");
   w->Expect ("b", "value 2");
-
-  s.reset ();
 }
 
 /* ************************************************************************** */

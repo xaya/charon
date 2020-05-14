@@ -37,10 +37,13 @@ namespace
  * An instance of an UpdatableState, its WaiterThread and an associated
  * update handler that allows expecting update calls.
  */
-class TestWaiter : public UpdatableState
+class TestWaiter
 {
 
 private:
+
+  /** The underlying UpdatableState.  */
+  UpdatableState::Handle upd;
 
   /** The WaiterThread instance from our state.  */
   std::unique_ptr<WaiterThread> thread;
@@ -58,7 +61,9 @@ public:
 
   explicit TestWaiter (const std::string& nm)
   {
-    thread = NewWaiter (nm);
+    upd = UpdatableState::Create ();
+
+    thread = upd->NewWaiter (nm);
     thread->SetUpdateHandler ([this] (const Json::Value& s)
       {
         VLOG (1) << "Update callback: " << s;
@@ -108,6 +113,18 @@ public:
 
         cv.wait (lock);
       }
+  }
+
+  Json::Value
+  GetStateJson (const std::string& id, const std::string& value)
+  {
+    return upd->GetStateJson (id, value);
+  }
+
+  void
+  SetState (const std::string& id, const std::string& value)
+  {
+    return upd->SetState (id, value);
   }
 
 };

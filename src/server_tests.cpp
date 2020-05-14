@@ -307,10 +307,10 @@ TEST_F (ServerPingTests, GetResourceAndVersion)
 
 TEST_F (ServerPingTests, SupportedNotifications)
 {
-  UpdatableState upd;
+  auto upd = UpdatableState::Create ();
   server.AddPubSub (GetServerConfig ().pubsub);
-  const auto node1 = server.AddNotification (upd.NewWaiter ("foo"));
-  const auto node2 = server.AddNotification (upd.NewWaiter ("bar"));
+  const auto node1 = server.AddNotification (upd->NewWaiter ("foo"));
+  const auto node2 = server.AddNotification (upd->NewWaiter ("bar"));
 
   SendPing (JIDWithoutResource (GetTestAccount (accServer)));
   EXPECT_EQ (WaitForPong (), SERVER_RES);
@@ -322,10 +322,6 @@ TEST_F (ServerPingTests, SupportedNotifications)
     std::make_pair ("bar", node2),
     std::make_pair ("foo", node1)
   ));
-
-  /* We need to disconnect explicitly here to shut down the notifier waiting
-     threads before they go out of scope.  */
-  server.Disconnect ();
 }
 
 /* ************************************************************************** */
@@ -478,45 +474,38 @@ protected:
 
 TEST_F (ServerNotificationTests, TwoNodes)
 {
-  UpdatableState s1, s2;
-  const auto node1 = server.AddNotification (s1.NewWaiter ("foo"));
-  const auto node2 = server.AddNotification (s2.NewWaiter ("bar"));
+  auto s1 = UpdatableState::Create ();
+  auto s2 = UpdatableState::Create ();
+  const auto node1 = server.AddNotification (s1->NewWaiter ("foo"));
+  const auto node2 = server.AddNotification (s2->NewWaiter ("bar"));
 
   NotificationReceiver r1(*this, "foo", node1);
   NotificationReceiver r2(*this, "bar", node2);
 
-  s1.SetState ("a", "1");
-  s2.SetState ("b", "2");
+  s1->SetState ("a", "1");
+  s2->SetState ("b", "2");
   r1.Expect ({"a=1"});
   r2.Expect ({"b=2"});
 
-  s1.SetState ("c", "3");
-  s2.SetState ("d", "4");
+  s1->SetState ("c", "3");
+  s2->SetState ("d", "4");
   r1.Expect ({"c=3"});
   r2.Expect ({"d=4"});
-
-  /* We need to stop the server explicitly to clean out the waiter threads
-     before the instances here go out of scope.  */
-  server.Disconnect ();
 }
 
 TEST_F (ServerNotificationTests, MultipleUpdates)
 {
-  UpdatableState s;
-  const auto node = server.AddNotification (s.NewWaiter ("foo"));
+  auto s = UpdatableState::Create ();
+  const auto node = server.AddNotification (s->NewWaiter ("foo"));
   NotificationReceiver r(*this, "foo", node);
 
-  s.SetState ("a", "1");
+  s->SetState ("a", "1");
   std::this_thread::sleep_for (std::chrono::milliseconds (50));
-  s.SetState ("b", "2");
+  s->SetState ("b", "2");
   std::this_thread::sleep_for (std::chrono::milliseconds (50));
-  s.SetState ("c", "3");
+  s->SetState ("c", "3");
 
   r.Expect ({"a=1", "b=2", "c=3"});
-
-  /* We need to stop the server explicitly to clean out the waiter threads
-     before the instances here go out of scope.  */
-  server.Disconnect ();
 }
 
 /* ************************************************************************** */
