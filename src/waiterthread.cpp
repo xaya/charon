@@ -23,6 +23,20 @@
 namespace charon
 {
 
+namespace
+{
+
+/** The default backoff time used for waiter calls.  */
+const auto DEFAULT_BACKOFF = std::chrono::seconds (5);
+
+} // anonymous namespace
+
+WaiterThread::WaiterThread (std::unique_ptr<NotificationType> t,
+                            std::unique_ptr<UpdateWaiter> w)
+  : type(std::move (t)), waiter(std::move (w)),
+    backoff(DEFAULT_BACKOFF)
+{}
+
 WaiterThread::~WaiterThread ()
 {
   CHECK (loop == nullptr);
@@ -31,10 +45,32 @@ WaiterThread::~WaiterThread ()
 void
 WaiterThread::RunLoop ()
 {
+  using Clock = std::chrono::steady_clock;
   while (!shouldStop)
     {
       Json::Value result;
+      const auto before = Clock::now ();
       if (!waiter->WaitForUpdate (result))
+        {
+          /* Make sure to wait for the backoff time to be elapsed in case
+             the call failed.  We take the time of the call itself into account,
+             though, to e.g. handle timeout errors better.  */
+          const auto after = Clock::now ();
+          const auto toSleep = backoff - (after - before);
+          if (toSleep > decltype (toSleep)::zero ())
+            {
+              const auto sleepMs
+                  = std::chrono::duration_cast<std::chrono::milliseconds> (
+                        toSleep);
+              LOG (INFO)
+                  << "Waiter call failed, backing off for "
+                  << sleepMs.count () << " ms";
+              std::this_thread::sleep_for (toSleep);
+            }
+          continue;
+        }
+
+      if (result.isNull ())
         continue;
 
       std::lock_guard<std::mutex> lock(mut);

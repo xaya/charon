@@ -201,15 +201,15 @@ public:
   WaitForUpdate (Json::Value& newState) override
   {
     std::unique_lock<std::mutex> lock(ref->mut);
+    ++ref->calls;
 
-    ++ref->waitCounter;
-    if (ref->waitCounter % 2 == 0)
+    if (ref->fail)
       return false;
 
     ref->cv.wait_for (lock, std::chrono::milliseconds (10));
 
     newState = ref->state;
-    return !ref->state.isNull ();
+    return true;
   }
 
 };
@@ -255,6 +255,22 @@ UpdatableState::SetState (const std::string& id, const std::string& value)
   std::lock_guard<std::mutex> lock(mut);
   state = GetStateJson (id, value);
   cv.notify_all ();
+}
+
+void
+UpdatableState::SetShouldFail (const bool val)
+{
+  LOG (INFO) << "Setting should fail for UpdatableState to: " << val;
+  std::lock_guard<std::mutex> lock(mut);
+  fail = val;
+  cv.notify_all ();
+}
+
+unsigned
+UpdatableState::GetNumCalls () const
+{
+  std::lock_guard<std::mutex> lock(mut);
+  return calls;
 }
 
 std::unique_ptr<WaiterThread>

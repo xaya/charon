@@ -24,6 +24,7 @@
 #include <json/json.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -51,7 +52,11 @@ public:
    * Subclasses must implement this method to wait for an update of the state.
    * The method should return true if the call was successful and we may have
    * a new state in the output argument.  If it returns false, it means that
-   * the call may be retried, e.g. because of a timeout error.
+   * the call may be retried later, e.g. because of an RPC error.
+   *
+   * If the call itself was successful but no state could be retrieved,
+   * then newState should be set to JSON null and the call will be
+   * retried immediately.
    */
   virtual bool WaitForUpdate (Json::Value& newState) = 0;
 
@@ -77,6 +82,12 @@ private:
 
   /** UpdateWaiter we use.  */
   std::unique_ptr<UpdateWaiter> waiter;
+
+  /**
+   * The "back off" time to wait between retries of calls to the
+   * waiter function in case it fails (returns false).
+   */
+  std::chrono::milliseconds backoff;
 
   /** The running loop thread if any.  */
   std::unique_ptr<std::thread> loop;
@@ -110,9 +121,7 @@ public:
    * Constructs the thread, which is not yet running.
    */
   explicit WaiterThread (std::unique_ptr<NotificationType> t,
-                         std::unique_ptr<UpdateWaiter> w)
-    : type(std::move (t)), waiter(std::move (w))
-  {}
+                         std::unique_ptr<UpdateWaiter> w);
 
   WaiterThread () = delete;
   WaiterThread (const WaiterThread&) = delete;
@@ -123,6 +132,17 @@ public:
    * the object is destroyed, the running loop must be stopped explicitly.
    */
   virtual ~WaiterThread ();
+
+  /**
+   * Sets the backoff time to a custom value.
+   */
+  template <typename Rep, typename Period>
+    void
+    SetBackoff (const std::chrono::duration<Rep, Period>& val)
+  {
+    std::lock_guard<std::mutex> lock(mut);
+    backoff = val;
+  }
 
   /**
    * Starts the waiter thread loop.

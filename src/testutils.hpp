@@ -188,16 +188,19 @@ private:
   Json::Value state;
 
   /** Mutex for the instance and waiters.  */
-  std::mutex mut;
+  mutable std::mutex mut;
 
   /** Condition variable for the waiting threads.  */
   std::condition_variable cv;
 
+  /** Counter for the WaitForChange calls made.  */
+  unsigned calls = 0;
+
   /**
-   * Counter for calls to WaitForChange.  This is used to make the call fail
-   * every second time, so we can verify this is tolerated.
+   * When this is true, WaitForChange calls will fail (return false)
+   * instead of actually waiting.
    */
-  unsigned waitCounter = 0;
+  bool fail = false;
 
   UpdatableState () = default;
 
@@ -227,6 +230,17 @@ public:
    * Updates the current state.
    */
   void SetState (const std::string& id, const std::string& value);
+
+  /**
+   * Sets the "should fail" variable.
+   */
+  void SetShouldFail (bool val);
+
+  /**
+   * Get the number of waiter calls made.  This can be used to check
+   * some things in tests (e.g. that no excessive calls are made).
+   */
+  unsigned GetNumCalls () const;
 
   /**
    * Constructs the state JSON in our test format for a given ID and value.

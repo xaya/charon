@@ -24,8 +24,6 @@
 
 #include <glog/logging.h>
 
-#include <chrono>
-
 namespace charon
 {
 namespace
@@ -127,6 +125,27 @@ public:
     return upd->SetState (id, value);
   }
 
+  void
+  SetShouldFail (const bool val)
+  {
+    upd->SetShouldFail (val);
+  }
+
+  unsigned
+  GetNumCalls () const
+  {
+    return upd->GetNumCalls ();
+  }
+
+  /**
+   * Sets the backoff value of the waiter thread.
+   */
+  void
+  SetBackoff (const std::chrono::milliseconds& val)
+  {
+    thread->SetBackoff (val);
+  }
+
 };
 
 /* ************************************************************************** */
@@ -167,6 +186,29 @@ TEST_F (WaiterThreadTests, TwoWaiters)
   w2.SetState ("second", "2");
   w1.ExpectUpdate ("second", "1");
   w2.ExpectUpdate ("second", "2");
+}
+
+TEST_F (WaiterThreadTests, ErrorBackoff)
+{
+  TestWaiter w("test");
+  w.SetBackoff (std::chrono::milliseconds (100));
+
+  /* If the waiter call fails, we should not go into a loop spamming
+     more calls as fast as possible.  */
+  w.SetShouldFail (true);
+  std::this_thread::sleep_for (std::chrono::milliseconds (10));
+  EXPECT_LT (w.GetNumCalls (), 5);
+
+  /* Once the error stops, it should get back to being normal (and especially
+     update faster than the backoff time if there are real updates).  */
+  w.SetShouldFail (false);
+  std::this_thread::sleep_for (std::chrono::milliseconds (200));
+  using Clock = std::chrono::steady_clock;
+  const auto before = Clock::now ();
+  w.SetState ("update", "foo");
+  w.ExpectUpdate ("update", "foo");
+  const auto after = Clock::now ();
+  EXPECT_LT (after - before, std::chrono::milliseconds (10));
 }
 
 /* ************************************************************************** */
