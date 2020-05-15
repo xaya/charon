@@ -638,14 +638,21 @@ TEST_F (ServerReconnectLoopTests, Reconnects)
 
 TEST_F (ServerReconnectLoopTests, QuickShutdown)
 {
-  Server::ReconnectLoop loop(server, std::chrono::seconds (100));
+  Server::ReconnectLoop loop(server, std::chrono::seconds (5));
   loop.Start (0);
 
   std::this_thread::sleep_for (std::chrono::milliseconds (500));
   ASSERT_TRUE (server.IsConnected ());
 
+  /* Shutdown should be much quicker than the repeat interval.  */
+  using Clock = std::chrono::steady_clock;
+  const auto before = Clock::now ();
+
   loop.Stop ();
   ASSERT_FALSE (server.IsConnected ());
+
+  const auto after = Clock::now ();
+  EXPECT_LT (after - before, std::chrono::milliseconds (100));
 }
 
 /* ************************************************************************** */
