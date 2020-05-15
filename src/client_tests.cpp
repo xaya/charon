@@ -673,6 +673,12 @@ TEST_F (ClientNotificationTests, ServerReselection)
   EXPECT_EQ (client.GetServerResource (), "srv1");
   auto w = CallWaitForChange ("foo", "");
 
+  /* Shut down the server first, wait a little to let the pubsub node cleanups
+     go through, and then recreate the server.  This avoids potential locking
+     errors with a clustered server.  */
+  s.reset ();
+  std::this_thread::sleep_for (std::chrono::milliseconds (100));
+
   s = ConnectServer ("srv2");
   s->AddPubSub (GetServerConfig ().pubsub);
   s->AddNotification (upd->NewWaiter ("foo"));
@@ -691,6 +697,8 @@ TEST_F (ClientNotificationTests, ServerReselection)
   /* Try again.  This time we trigger reselection through the call itself,
      and only use GetServerResource to force all subscriptions to be done
      before updating the server state.  */
+  s.reset ();
+  std::this_thread::sleep_for (std::chrono::milliseconds (100));
   s = ConnectServer ("srv3");
   s->AddPubSub (GetServerConfig ().pubsub);
   s->AddNotification (upd->NewWaiter ("foo"));
