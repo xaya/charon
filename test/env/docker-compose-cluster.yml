@@ -1,0 +1,24 @@
+# Start up a local ejabberd cluster with two nodes in a temporary environment
+# for testing Charon.
+
+version: "3"
+
+services:
+
+  first:
+    build:
+      context: ./image
+      args:
+        ERLANG_HOST: "first"
+    command: ["first"]
+
+  second:
+    build:
+      context: ./image
+      args:
+        ERLANG_HOST: "second"
+    links:
+      - first
+    ports:
+      - "127.0.0.1:5222:5222"
+    command: ["second"]
