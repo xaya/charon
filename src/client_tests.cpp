@@ -137,7 +137,9 @@ protected:
     : XmppClient(JIDWithResource (GetTestAccount (accServer), SERVER_RES),
                  GetTestAccount (accServer).password),
       client(JIDWithoutResource (GetTestAccount (accServer)).bare (),
-             SERVER_VERSION)
+             SERVER_VERSION,
+             JIDWithResource (GetTestAccount (accClient), CLIENT_RES).full (),
+             GetTestAccount (accClient).password)
   {
     RunWithClient ([this] (gloox::Client& c)
       {
@@ -150,9 +152,7 @@ protected:
         c.registerPresenceHandler (this);
       });
 
-    client.Connect (
-        JIDWithResource (GetTestAccount (accClient), CLIENT_RES).full (),
-        GetTestAccount (accClient).password, 0);
+    client.Connect (0);
     Connect (0);
   }
 
@@ -292,7 +292,9 @@ protected:
 
   ClientTestWithServer ()
     : client(JIDWithoutResource (GetTestAccount (accServer)).bare (),
-             SERVER_VERSION)
+             SERVER_VERSION,
+             JIDWithoutResource (GetTestAccount (accClient)).full (),
+             GetTestAccount (accClient).password)
   {}
 
   /**
@@ -301,8 +303,7 @@ protected:
   void
   ConnectClient ()
   {
-    client.Connect (JIDWithoutResource (GetTestAccount (accClient)).full (),
-                    GetTestAccount (accClient).password, 0);
+    client.Connect (0);
   }
 
   /**
@@ -365,6 +366,15 @@ TEST_F (ClientRpcForwardingTests, CallTimeout)
   backend.SetDelay (std::chrono::milliseconds (100));
   EXPECT_THROW (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")),
                 RpcServer::Error);
+}
+
+TEST_F (ClientRpcForwardingTests, Reconnect)
+{
+  client.Disconnect ();
+  client.Connect (0);
+
+  auto srv = ConnectServer ();
+  EXPECT_EQ (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")), "foo");
 }
 
 TEST_F (ClientRpcForwardingTests, MultipleThreads)
@@ -637,6 +647,28 @@ TEST_F (ClientNotificationTests, AlwaysBlock)
   w->ExpectRunning ();
   upd->SetState ("b", "second");
   w->Expect ("b", "second");
+}
+
+TEST_F (ClientNotificationTests, Reconnect)
+{
+  ConnectClient ({"foo"});
+
+  client.Disconnect ();
+  client.Connect (0);
+
+  auto s = ConnectServer ();
+  s->AddPubSub (GetServerConfig ().pubsub);
+
+  auto upd = UpdatableState::Create ();
+  s->AddNotification (upd->NewWaiter ("foo"));
+
+  /* Force subscriptions to be finalised by now.  */
+  client.GetServerResource ();
+
+  auto w = CallWaitForChange ("foo", "alwaysblock");
+  w->ExpectRunning ();
+  upd->SetState ("a", "value");
+  w->Expect ("a", "value");
 }
 
 TEST_F (ClientNotificationTests, TwoNotifications)

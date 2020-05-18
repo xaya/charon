@@ -221,7 +221,8 @@ main (int argc, char** argv)
 
   LOG (INFO) << "Using " << FLAGS_server_jid << " as server";
   LOG (INFO) << "Requiring backend version " << FLAGS_backend_version;
-  charon::Client client(FLAGS_server_jid, FLAGS_backend_version);
+  charon::Client client(FLAGS_server_jid, FLAGS_backend_version,
+                        FLAGS_client_jid, FLAGS_password);
 
   LOG (INFO) << "Listening for local RPCs on port " << FLAGS_port;
   jsonrpc::HttpServer httpServer(FLAGS_port);
@@ -252,7 +253,7 @@ main (int argc, char** argv)
     }
 
   LOG (INFO) << "Connecting client to XMPP as " << FLAGS_client_jid;
-  client.Connect (FLAGS_client_jid, FLAGS_password, -1);
+  client.Connect (-1);
 
   if (FLAGS_detect_server)
     {

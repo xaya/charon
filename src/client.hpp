@@ -57,12 +57,6 @@ private:
   Duration timeout;
 
   /**
-   * Notification types that we should listen to.  This is the place where
-   * the instances are held and owned.
-   */
-  std::map<std::string, std::unique_ptr<NotificationType>> notifications;
-
-  /**
    * The class implementing the main logic.  Its internals depend on private
    * libraries like gloox, so that the definition is not exposed in the header.
    */
@@ -73,9 +67,13 @@ public:
   /**
    * Constructs the client instance (without connecting it).  Any requests
    * made (after the instance is connected) will be forwarded to the given
-   * JID for reply.
+   * JID for reply.#
+   *
+   * This already fixes the JID and password for the client's XMPP connection
+   * as well, but does not yet actually connect to the XMPP network.
    */
-  explicit Client (const std::string& srv, const std::string& v);
+  explicit Client (const std::string& srv, const std::string& v,
+                   const std::string& jid, const std::string& password);
 
   ~Client ();
 
@@ -95,11 +93,9 @@ public:
   }
 
   /**
-   * Connects to XMPP with the given JID and password.  Starts a thread
-   * that processes any data we receive.
+   * Connects to XMPP and starts a thread that processes any data we receive.
    */
-  void Connect (const std::string& jid, const std::string& password,
-                int priority);
+  void Connect (int priority);
 
   /**
    * Disconnects the XMPP client and stops processing data.

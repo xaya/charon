@@ -288,7 +288,7 @@ class NotificationState
 private:
 
   /** NotificationType instance that we use.  */
-  const NotificationType& notification;
+  std::unique_ptr<NotificationType> notification;
 
   /** Mutex for this instance.  */
   std::mutex mut;
@@ -311,8 +311,8 @@ public:
   /**
    * Constructs a new instance for the given notification type.
    */
-  explicit NotificationState (const NotificationType& n)
-    : notification(n)
+  explicit NotificationState (std::unique_ptr<NotificationType> n)
+    : notification(std::move (n))
   {}
 
   NotificationState () = delete;
@@ -338,9 +338,9 @@ NotificationState::WaitForChange (const Json::Value& known)
 {
   std::unique_lock<std::mutex> lock(mut);
 
-  if (hasState && known != notification.AlwaysBlockId ())
+  if (hasState && known != notification->AlwaysBlockId ())
     {
-      const auto stateId = notification.ExtractStateId (state);
+      const auto stateId = notification->ExtractStateId (state);
       if (known != stateId)
         {
           VLOG (1)
@@ -350,7 +350,7 @@ NotificationState::WaitForChange (const Json::Value& known)
         }
     }
 
-  VLOG (1) << "Starting wait for " << notification.GetType () << "...";
+  VLOG (1) << "Starting wait for " << notification->GetType () << "...";
 
   cv.wait_for (lock, WAITFORCHANGE_TIMEOUT);
   return state;
@@ -361,9 +361,10 @@ NotificationState::GetItemCallback ()
 {
   return [this] (const gloox::Tag& t)
     {
+      const auto& type = notification->GetType ();
+
       VLOG (1)
-          << "Processing update notification for " << notification.GetType ()
-          << ":\n" << t.xml ();
+          << "Processing update notification for " << type << ":\n" << t.xml ();
 
       const auto* updTag = t.findChild ("update");
       if (updTag == nullptr)
@@ -381,11 +382,11 @@ NotificationState::GetItemCallback ()
           return;
         }
 
-      if (upd.GetType () != notification.GetType ())
+      if (upd.GetType () != type)
         {
           LOG (WARNING)
               << "Ignoring update for different type (got " << upd.GetType ()
-              << ", waiting for " << notification.GetType () << "):\n"
+              << ", waiting for " << type << "):\n"
               << t.xml ();
           return;
         }
@@ -394,7 +395,7 @@ NotificationState::GetItemCallback ()
       hasState = true;
       state = upd.GetState ();
 
-      LOG (INFO) << "Found new state for " << notification.GetType ();
+      LOG (INFO) << "Found new state for " << type;
       VLOG (1) << "New state:\n" << state;
 
       cv.notify_all ();
@@ -434,10 +435,10 @@ private:
 
   /**
    * Threads that are currently running pubsub subscriptions or have run some
-   * in the past.  We mostly just threads here that will finish by themselves
-   * and be joined in the destructor, although we also explicitly join them
-   * in some situations (e.g. when GetServerResource is called explicitly to
-   * force server selection).
+   * in the past.  We mostly just collect threads here that will finish by
+   * themselves and be joined in the destructor, although we also explicitly
+   * join them in some situations (e.g. when GetServerResource is called
+   * explicitly to force server selection).
    */
   std::vector<std::thread> subscribeCalls;
 
@@ -481,6 +482,11 @@ public:
   ~Impl ();
 
   /**
+   * Enables a new notification.
+   */
+  void AddNotification (std::unique_ptr<NotificationType> n);
+
+  /**
    * Returns the server's resource and tries to find one if none is there.
    */
   std::string GetServerResource ();
@@ -511,13 +517,6 @@ Client::Impl::Impl (Client& p, const gloox::JID& jid, const std::string& pwd)
 
       c.registerPresenceHandler (this);
     });
-
-  for (const auto& entry : client.notifications)
-    {
-      auto n = std::make_unique<NotificationState> (*entry.second);
-      const auto res = states.emplace (entry.first, std::move (n));
-      CHECK (res.second);
-    }
 }
 
 Client::Impl::~Impl ()
@@ -529,6 +528,15 @@ Client::Impl::~Impl ()
 
   std::unique_lock<std::mutex> lock(mut);
   FinishSubscriptions (lock);
+}
+
+void
+Client::Impl::AddNotification (std::unique_ptr<NotificationType> n)
+{
+  const auto& type = n->GetType ();
+  auto s = std::make_unique<NotificationState> (std::move (n));
+  const auto res = states.emplace (type, std::move (s));
+  CHECK (res.second) << "Duplicate notification of type " << type;
 }
 
 void
@@ -807,46 +815,43 @@ Client::Impl::WaitForChange (const std::string& type, const Json::Value& known)
   }
 
   const auto mit = states.find (type);
-  CHECK (mit != states.end ());
+  CHECK (mit != states.end ()) << "Notification type not enabled: " << type;
   return mit->second->WaitForChange (known);
 }
 
 /* ************************************************************************** */
 
-Client::Client (const std::string& srv, const std::string& v)
+Client::Client (const std::string& srv, const std::string& v,
+                const std::string& jidStr, const std::string& password)
   : serverJid(srv), version(v)
 {
   SetTimeout (DEFAULT_TIMEOUT);
+
+  const gloox::JID jid(jidStr);
+  impl = std::make_unique<Impl> (*this, jid, password);
 }
 
 Client::~Client () = default;
 
 void
-Client::Connect (const std::string& jidStr, const std::string& password,
-                 const int priority)
+Client::Connect (const int priority)
 {
-  const gloox::JID jid(jidStr);
-  impl = std::make_unique<Impl> (*this, jid, password);
+  CHECK (impl != nullptr);
   impl->Connect (priority);
 }
 
 void
 Client::Disconnect ()
 {
-  if (impl == nullptr)
-    return;
-
+  CHECK (impl != nullptr);
   impl->Disconnect ();
-  impl.reset ();
 }
 
 void
 Client::AddNotification (std::unique_ptr<NotificationType> n)
 {
-  CHECK (impl == nullptr);
-  const auto type = n->GetType ();
-  const auto res = notifications.emplace (type, std::move (n));
-  CHECK (res.second) << "Duplicate notification type added: " << type;
+  CHECK (impl != nullptr);
+  impl->AddNotification (std::move (n));
 }
 
 std::string
@@ -867,8 +872,6 @@ Json::Value
 Client::WaitForChange (const std::string& type, const Json::Value& known)
 {
   CHECK (impl != nullptr);
-  CHECK (notifications.find (type) != notifications.end ())
-      << "Notification type not enabled: " << type;
   return impl->WaitForChange (type, known);
 }
 
