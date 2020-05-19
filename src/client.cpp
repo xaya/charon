@@ -617,6 +617,14 @@ Client::Impl::handlePresence (const gloox::Presence& p)
 
         std::unique_lock<std::mutex> lock(mut);
 
+        if (p.from ().bareJID () != fullServerJid.bareJID ())
+          {
+            LOG (WARNING)
+                << "Ignoring pong not from our server but from "
+                << p.from ().full ();
+            return;
+          }
+
         /* In case we get multiple replies, we pick the first only.  */
         if (!HasFullServerJid ())
           {

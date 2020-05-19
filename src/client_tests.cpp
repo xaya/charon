@@ -124,6 +124,7 @@ protected:
   static constexpr int accServer = 0;
   static constexpr int accClient = 1;
 
+  static constexpr const char* CLIENT_RES = "client";
   static constexpr const char* SERVER_RES = "test";
   static constexpr const char* SERVER_VERSION = "version";
 
@@ -149,8 +150,9 @@ protected:
         c.registerPresenceHandler (this);
       });
 
-    client.Connect (JIDWithoutResource (GetTestAccount (accClient)).full (),
-                    GetTestAccount (accClient).password, 0);
+    client.Connect (
+        JIDWithResource (GetTestAccount (accClient), CLIENT_RES).full (),
+        GetTestAccount (accClient).password, 0);
     Connect (0);
   }
 
@@ -187,6 +189,32 @@ TEST_F (ClientServerDiscoveryTests, Timeout)
 {
   client.SetTimeout (PONG_DELAY / 2);
   EXPECT_EQ (client.GetServerResource (), "");
+}
+
+TEST_F (ClientServerDiscoveryTests, IgnoresOtherServer)
+{
+  client.SetTimeout (2 * PONG_DELAY);
+
+  charon::XmppClient other(JIDWithoutResource (GetTestAccount (accClient)),
+                           GetTestAccount (accClient).password);
+  other.Connect (0);
+
+  std::thread pinger([this] ()
+    {
+      EXPECT_EQ (client.GetServerResource (), SERVER_RES);
+    });
+
+  /* While the real server sleeps before sending the pong, send a pong message
+     from an entirely different JID.  It should be ignored.  */
+  const auto jid = JIDWithResource (GetTestAccount (accClient), CLIENT_RES);
+  gloox::Presence reply(gloox::Presence::Available, jid);
+  reply.addExtension (new PongMessage (SERVER_VERSION));
+  other.RunWithClient ([&reply] (gloox::Client& c)
+    {
+      c.send (reply);
+    });
+
+  pinger.join ();
 }
 
 TEST_F (ClientServerDiscoveryTests, MultipleThreads)
