@@ -164,7 +164,8 @@ XmppClient::Receive ()
       return true;
 
     default:
-      LOG (FATAL) << "Receive error for " << jid.full () << ": " << res;
+      LOG (ERROR) << "Receive error for " << jid.full () << ": " << res;
+      return true;
     }
 }
 
