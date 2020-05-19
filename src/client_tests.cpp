@@ -219,6 +219,11 @@ TEST_F (ClientServerDiscoveryTests, IgnoresOtherServer)
 
 TEST_F (ClientServerDiscoveryTests, MultipleThreads)
 {
+  /* Disconnect the client first, so that it will have to auto-connect
+     on demand and we can test that this works even with many concurrent
+     threads triggering it.  */
+  client.Disconnect ();
+
   client.SetTimeout (2 * PONG_DELAY);
 
   std::vector<std::thread> threads;
@@ -252,6 +257,15 @@ TEST_F (ClientServerDiscoveryTests, DisconnectClearsServerJid)
   client.Disconnect ();
   client.Connect ();
   EXPECT_EQ (client.GetServerResource (), "other");
+}
+
+TEST_F (ClientServerDiscoveryTests, ConnectionFailure)
+{
+  Client other(JIDWithoutResource (GetTestAccount (accServer)).bare (),
+               SERVER_VERSION,
+               JIDWithoutResource (GetTestAccount (accClient)).full (),
+               "wrong password");
+  EXPECT_EQ (other.GetServerResource (), "");
 }
 
 /* ************************************************************************** */

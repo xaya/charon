@@ -416,6 +416,8 @@ class Client::Impl : public XmppClient,
 
 private:
 
+  class ConnectionAttempt;
+
   /** Reference to the corresponding Client class.  */
   Client& client;
 
@@ -424,6 +426,11 @@ private:
    * condition variables.
    */
   std::mutex mut;
+
+  /** If true, then some thread is currently attempting to Connect to XMPP.  */
+  bool connecting = false;
+  /** Condition variable signalled when a connection attempt is done.  */
+  std::condition_variable cvConnecting;
 
   /**
    * The selected, full JID of the server we talk to.  This may be equal to
@@ -480,7 +487,8 @@ private:
   /**
    * Tries to ensure that we have an active XMPP connection and also a
    * fullServerJid set.  If none is set yet, we send a ping or wait for the
-   * completion of an existing ping.
+   * completion of an existing ping.  If the client is not even connected
+   * to XMPP yet, we connect.
    *
    * Returns the server JID to send requests to, or an invalid JID if we
    * could not detect a server or connect.
@@ -562,10 +570,61 @@ Client::Impl::AddNotification (std::unique_ptr<NotificationType> n)
   CHECK (res.second) << "Duplicate notification of type " << type;
 }
 
+/**
+ * RAII helper class for setup and cleanup while we attempt to connect
+ * to XMPP.
+ */
+class Client::Impl::ConnectionAttempt
+{
+
+private:
+
+  Impl& self;
+  std::unique_lock<std::mutex>& lock;
+
+public:
+
+  explicit ConnectionAttempt (Impl& s, std::unique_lock<std::mutex>& l)
+    : self(s), lock(l)
+  {
+    CHECK (lock.owns_lock ());
+    CHECK (!self.connecting);
+
+    self.connecting = true;
+    lock.unlock ();
+  }
+
+  ~ConnectionAttempt ()
+  {
+    lock.lock ();
+    CHECK (self.connecting);
+    self.connecting = false;
+    self.cvConnecting.notify_all ();
+  }
+
+};
+
 gloox::JID
 Client::Impl::EnsureConnected ()
 {
   std::unique_lock<std::mutex> lock(mut);
+
+  /* If another connection attempt is currently running, wait for it to be
+     done first.  */
+  while (connecting)
+    cvConnecting.wait (lock);
+
+  /* If we are not connected, try to connect.  While connecting, we release
+     the lock; this is useful because the operation itself might take some time,
+     and also because it can trigger a HandleDisconnect call which also attempts
+     to get the lock.  We still use the connecting flag and condition variable
+     to prevent concurrent connection attemps.  */
+  if (!IsConnected ())
+    {
+      ConnectionAttempt attempt(*this, lock);
+      if (!IsConnected () && !Connect (-1))
+        return gloox::JID ();
+    }
 
   if (HasFullServerJid ())
     return fullServerJid;
