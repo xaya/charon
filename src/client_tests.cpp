@@ -235,6 +235,25 @@ TEST_F (ClientServerDiscoveryTests, MultipleThreads)
   ExpectClientPresence ();
 }
 
+TEST_F (ClientServerDiscoveryTests, DisconnectClearsServerJid)
+{
+  client.SetTimeout (2 * PONG_DELAY);
+  EXPECT_EQ (client.GetServerResource (), SERVER_RES);
+
+  /* Now we start a second server with higher priority (and no pong delay),
+     which will be selected over the custom server if reselected.  */
+  TestBackend backend;
+  Server srv(SERVER_VERSION, backend,
+             JIDWithResource (GetTestAccount (accServer), "other").full (),
+             GetTestAccount (accServer).password);
+  srv.Connect (100);
+
+  EXPECT_EQ (client.GetServerResource (), SERVER_RES);
+  client.Disconnect ();
+  client.Connect ();
+  EXPECT_EQ (client.GetServerResource (), "other");
+}
+
 /* ************************************************************************** */
 
 /**

@@ -490,6 +490,10 @@ private:
    */
   void FinishSubscriptions (std::unique_lock<std::mutex>& lock);
 
+protected:
+
+  void HandleDisconnect () override;
+
 public:
 
   explicit Impl (Client& c, const gloox::JID& jid, const std::string& pwd);
@@ -600,8 +604,7 @@ Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
 void
 Client::Impl::ClearSelectedServer ()
 {
-  LOG (WARNING) << "Our server has become unavailable";
-  fullServerJid = fullServerJid.bareJID ();
+  fullServerJid = client.serverJid;
 }
 
 void
@@ -724,13 +727,23 @@ Client::Impl::handlePresence (const gloox::Presence& p)
       {
         std::lock_guard<std::mutex> lock(mut);
         if (p.from () == fullServerJid)
-          ClearSelectedServer ();
+          {
+            LOG (WARNING) << "Our server has become unavailable";
+            ClearSelectedServer ();
+          }
         return;
       }
 
     default:
       return;
     }
+}
+
+void
+Client::Impl::HandleDisconnect ()
+{
+  std::lock_guard<std::mutex> lock(mut);
+  ClearSelectedServer ();
 }
 
 std::string
