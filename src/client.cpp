@@ -288,7 +288,7 @@ class NotificationState
 private:
 
   /** NotificationType instance that we use.  */
-  const NotificationType& notification;
+  std::unique_ptr<NotificationType> notification;
 
   /** Mutex for this instance.  */
   std::mutex mut;
@@ -311,8 +311,8 @@ public:
   /**
    * Constructs a new instance for the given notification type.
    */
-  explicit NotificationState (const NotificationType& n)
-    : notification(n)
+  explicit NotificationState (std::unique_ptr<NotificationType> n)
+    : notification(std::move (n))
   {}
 
   NotificationState () = delete;
@@ -338,9 +338,9 @@ NotificationState::WaitForChange (const Json::Value& known)
 {
   std::unique_lock<std::mutex> lock(mut);
 
-  if (hasState && known != notification.AlwaysBlockId ())
+  if (hasState && known != notification->AlwaysBlockId ())
     {
-      const auto stateId = notification.ExtractStateId (state);
+      const auto stateId = notification->ExtractStateId (state);
       if (known != stateId)
         {
           VLOG (1)
@@ -350,7 +350,7 @@ NotificationState::WaitForChange (const Json::Value& known)
         }
     }
 
-  VLOG (1) << "Starting wait for " << notification.GetType () << "...";
+  VLOG (1) << "Starting wait for " << notification->GetType () << "...";
 
   cv.wait_for (lock, WAITFORCHANGE_TIMEOUT);
   return state;
@@ -361,9 +361,10 @@ NotificationState::GetItemCallback ()
 {
   return [this] (const gloox::Tag& t)
     {
+      const auto& type = notification->GetType ();
+
       VLOG (1)
-          << "Processing update notification for " << notification.GetType ()
-          << ":\n" << t.xml ();
+          << "Processing update notification for " << type << ":\n" << t.xml ();
 
       const auto* updTag = t.findChild ("update");
       if (updTag == nullptr)
@@ -381,11 +382,11 @@ NotificationState::GetItemCallback ()
           return;
         }
 
-      if (upd.GetType () != notification.GetType ())
+      if (upd.GetType () != type)
         {
           LOG (WARNING)
               << "Ignoring update for different type (got " << upd.GetType ()
-              << ", waiting for " << notification.GetType () << "):\n"
+              << ", waiting for " << type << "):\n"
               << t.xml ();
           return;
         }
@@ -394,7 +395,7 @@ NotificationState::GetItemCallback ()
       hasState = true;
       state = upd.GetState ();
 
-      LOG (INFO) << "Found new state for " << notification.GetType ();
+      LOG (INFO) << "Found new state for " << type;
       VLOG (1) << "New state:\n" << state;
 
       cv.notify_all ();
@@ -415,6 +416,8 @@ class Client::Impl : public XmppClient,
 
 private:
 
+  class ConnectionAttempt;
+
   /** Reference to the corresponding Client class.  */
   Client& client;
 
@@ -423,6 +426,11 @@ private:
    * condition variables.
    */
   std::mutex mut;
+
+  /** If true, then some thread is currently attempting to Connect to XMPP.  */
+  bool connecting = false;
+  /** Condition variable signalled when a connection attempt is done.  */
+  std::condition_variable cvConnecting;
 
   /**
    * The selected, full JID of the server we talk to.  This may be equal to
@@ -434,10 +442,10 @@ private:
 
   /**
    * Threads that are currently running pubsub subscriptions or have run some
-   * in the past.  We mostly just threads here that will finish by themselves
-   * and be joined in the destructor, although we also explicitly join them
-   * in some situations (e.g. when GetServerResource is called explicitly to
-   * force server selection).
+   * in the past.  We mostly just collect threads here that will finish by
+   * themselves and be joined in the destructor, although we also explicitly
+   * join them in some situations (e.g. when GetServerResource is called
+   * explicitly to force server selection).
    */
   std::vector<std::thread> subscribeCalls;
 
@@ -462,10 +470,30 @@ private:
   }
 
   /**
-   * Tries to ensure that we have a fullServerJid set.  If none is set yet,
-   * we send a ping or wait for the completion of an existing ping.
+   * Clears our selected server.  This is done when either the server
+   * goes offline (we receive an unavailable presence for it), or if the
+   * XMPP connection itself is closed.
    */
-  void TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock);
+  void ClearSelectedServer ();
+
+  /**
+   * Sets the selected server to the given full JID.  This also notifies
+   * all waiters on that.
+   */
+  void SetSelectedServer (std::unique_lock<std::mutex>& lock,
+                          const gloox::JID& jid,
+                          const SupportedNotifications* sn);
+
+  /**
+   * Tries to ensure that we have an active XMPP connection and also a
+   * fullServerJid set.  If none is set yet, we send a ping or wait for the
+   * completion of an existing ping.  If the client is not even connected
+   * to XMPP yet, we connect.
+   *
+   * Returns the server JID to send requests to, or an invalid JID if we
+   * could not detect a server or connect.
+   */
+  gloox::JID EnsureConnected ();
 
   /**
    * Forces all ongoing node subscriptions to be finished.  The caller is
@@ -474,11 +502,20 @@ private:
    */
   void FinishSubscriptions (std::unique_lock<std::mutex>& lock);
 
+protected:
+
+  void HandleDisconnect () override;
+
 public:
 
   explicit Impl (Client& c, const gloox::JID& jid, const std::string& pwd);
 
   ~Impl ();
+
+  /**
+   * Enables a new notification.
+   */
+  void AddNotification (std::unique_ptr<NotificationType> n);
 
   /**
    * Returns the server's resource and tries to find one if none is there.
@@ -511,13 +548,6 @@ Client::Impl::Impl (Client& p, const gloox::JID& jid, const std::string& pwd)
 
       c.registerPresenceHandler (this);
     });
-
-  for (const auto& entry : client.notifications)
-    {
-      auto n = std::make_unique<NotificationState> (*entry.second);
-      const auto res = states.emplace (entry.first, std::move (n));
-      CHECK (res.second);
-    }
 }
 
 Client::Impl::~Impl ()
@@ -532,10 +562,72 @@ Client::Impl::~Impl ()
 }
 
 void
-Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
+Client::Impl::AddNotification (std::unique_ptr<NotificationType> n)
 {
+  const auto& type = n->GetType ();
+  auto s = std::make_unique<NotificationState> (std::move (n));
+  const auto res = states.emplace (type, std::move (s));
+  CHECK (res.second) << "Duplicate notification of type " << type;
+}
+
+/**
+ * RAII helper class for setup and cleanup while we attempt to connect
+ * to XMPP.
+ */
+class Client::Impl::ConnectionAttempt
+{
+
+private:
+
+  Impl& self;
+  std::unique_lock<std::mutex>& lock;
+
+public:
+
+  explicit ConnectionAttempt (Impl& s, std::unique_lock<std::mutex>& l)
+    : self(s), lock(l)
+  {
+    CHECK (lock.owns_lock ());
+    CHECK (!self.connecting);
+
+    self.connecting = true;
+    lock.unlock ();
+  }
+
+  ~ConnectionAttempt ()
+  {
+    lock.lock ();
+    CHECK (self.connecting);
+    self.connecting = false;
+    self.cvConnecting.notify_all ();
+  }
+
+};
+
+gloox::JID
+Client::Impl::EnsureConnected ()
+{
+  std::unique_lock<std::mutex> lock(mut);
+
+  /* If another connection attempt is currently running, wait for it to be
+     done first.  */
+  while (connecting)
+    cvConnecting.wait (lock);
+
+  /* If we are not connected, try to connect.  While connecting, we release
+     the lock; this is useful because the operation itself might take some time,
+     and also because it can trigger a HandleDisconnect call which also attempts
+     to get the lock.  We still use the connecting flag and condition variable
+     to prevent concurrent connection attemps.  */
+  if (!IsConnected ())
+    {
+      ConnectionAttempt attempt(*this, lock);
+      if (!IsConnected () && !Connect (-1))
+        return gloox::JID ();
+    }
+
   if (HasFullServerJid ())
-    return;
+    return fullServerJid;
 
   auto ping = ongoingPing.lock ();
   if (ping == nullptr)
@@ -563,13 +655,73 @@ Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
       if (ping->IsTimedOut ())
         {
           LOG (WARNING) << "Waiting for pong timed out";
-          return;
+          return gloox::JID ();
         }
 
       if (HasFullServerJid ())
         {
           LOG (INFO) << "We now have a full server JID";
-          return;
+          return fullServerJid;
+        }
+    }
+}
+
+void
+Client::Impl::ClearSelectedServer ()
+{
+  fullServerJid = client.serverJid;
+}
+
+void
+Client::Impl::SetSelectedServer (std::unique_lock<std::mutex>& lock,
+                                 const gloox::JID& jid,
+                                 const SupportedNotifications* sn)
+{
+  CHECK_EQ (jid.bareJID (), fullServerJid.bareJID ());
+
+  fullServerJid = jid;
+  LOG (INFO)
+      << "Found full server JID: " << fullServerJid.full ();
+
+  gloox::Presence resp(gloox::Presence::Available, jid);
+  RunWithClient ([&resp] (gloox::Client& c)
+    {
+      c.send (resp);
+    });
+
+  /* By adding the pubsub instance here to our client, we also
+     replace any existing one and make sure that it is connected
+     to the service indicated by the server.  */
+  if (!states.empty ())
+    {
+      CHECK (sn != nullptr);
+
+      /* Before recreating the pubsub instance, we have to make sure
+         that all running calls to it are done to avoid any memory
+         corruption and race conditions.  */
+      FinishSubscriptions (lock);
+
+      AddPubSub (sn->GetService ());
+
+      const auto& n = sn->GetNotifications ();
+      for (auto& entry : states)
+        {
+          const auto mit = n.find (entry.first);
+          CHECK (mit != n.end ());
+
+          const std::string node = mit->second;
+          auto cb = entry.second->GetItemCallback ();
+
+          LOG (INFO)
+              << "Subscribing to node " << node
+              << " for notification " << entry.first;
+
+          /* The call to SubscribeToNode waits for the subscription
+             response from the server, so we have to do it async.  */
+          subscribeCalls.emplace_back ([this, node, cb] ()
+            {
+              GetPubSub ().SubscribeToNode (node, cb);
+            });
         }
     }
 }
@@ -627,53 +779,7 @@ Client::Impl::handlePresence (const gloox::Presence& p)
 
         /* In case we get multiple replies, we pick the first only.  */
         if (!HasFullServerJid ())
-          {
-            fullServerJid = p.from ();
-            LOG (INFO)
-                << "Found full server JID: " << fullServerJid.full ();
-
-            gloox::Presence resp(gloox::Presence::Available, p.from ());
-            RunWithClient ([&resp] (gloox::Client& c)
-              {
-                c.send (resp);
-              });
-
-            /* By adding the pubsub instance here to our client, we also
-               replace any existing one and make sure that it is connected
-               to the service indicated by the server.  */
-            if (!states.empty ())
-              {
-                CHECK (sn != nullptr);
-
-                /* Before recreating the pubsub instance, we have to make sure
-                   that all running calls to it are done to avoid any memory
-                   corruption and race conditions.  */
-                FinishSubscriptions (lock);
-
-                AddPubSub (sn->GetService ());
-
-                const auto& n = sn->GetNotifications ();
-                for (auto& entry : states)
-                  {
-                    const auto mit = n.find (entry.first);
-                    CHECK (mit != n.end ());
-
-                    const std::string node = mit->second;
-                    auto cb = entry.second->GetItemCallback ();
-
-                    LOG (INFO)
-                        << "Subscribing to node " << node
-                        << " for notification " << entry.first;
-
-                    /* The call to SubscribeToNode waits for the subscription
-                       response from the server, so we have to do it async.  */
-                    subscribeCalls.emplace_back ([this, node, cb] ()
-                      {
-                        GetPubSub ().SubscribeToNode (node, cb);
-                      });
-                  }
-              }
-          }
+          SetSelectedServer (lock, p.from (), sn);
 
         auto ping = ongoingPing.lock ();
         if (ping != nullptr)
@@ -688,7 +794,7 @@ Client::Impl::handlePresence (const gloox::Presence& p)
         if (p.from () == fullServerJid)
           {
             LOG (WARNING) << "Our server has become unavailable";
-            fullServerJid = fullServerJid.bareJID ();
+            ClearSelectedServer ();
           }
         return;
       }
@@ -698,15 +804,22 @@ Client::Impl::handlePresence (const gloox::Presence& p)
     }
 }
 
+void
+Client::Impl::HandleDisconnect ()
+{
+  std::lock_guard<std::mutex> lock(mut);
+  ClearSelectedServer ();
+}
+
 std::string
 Client::Impl::GetServerResource ()
 {
-  std::unique_lock<std::mutex> lock(mut);
-  TryEnsureFullServerJid (lock);
+  const auto jid = EnsureConnected ();
 
+  std::unique_lock<std::mutex> lock(mut);
   FinishSubscriptions (lock);
 
-  return fullServerJid.resource ();
+  return jid.resource ();
 }
 
 void
@@ -729,22 +842,17 @@ Json::Value
 Client::Impl::ForwardMethod (const std::string& method,
                              const Json::Value& params)
 {
-  std::unique_ptr<gloox::IQ> iq;
-  {
-    std::unique_lock<std::mutex> lock(mut);
-    TryEnsureFullServerJid (lock);
+  const auto jid = EnsureConnected ();
+  if (!jid)
+    {
+      std::ostringstream msg;
+      msg << "could not discover full server JID for " << client.serverJid;
+      throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                              msg.str ());
+    }
 
-    if (!HasFullServerJid ())
-      {
-        std::ostringstream msg;
-        msg << "could not discover full server JID for " << client.serverJid;
-        throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
-                                msg.str ());
-      }
-
-    iq = std::make_unique<gloox::IQ> (gloox::IQ::Get, fullServerJid);
-    iq->addExtension (new RpcRequest (method, params));
-  }
+  auto iq = std::make_unique<gloox::IQ> (gloox::IQ::Get, jid);
+  iq->addExtension (new RpcRequest (method, params));
 
   auto call = std::make_shared<OngoingRpcCall> (client.timeout);
   call->serverJid = iq->to ();
@@ -793,60 +901,57 @@ Client::Impl::ForwardMethod (const std::string& method,
 Json::Value
 Client::Impl::WaitForChange (const std::string& type, const Json::Value& known)
 {
-  {
-    std::unique_lock<std::mutex> lock(mut);
-    TryEnsureFullServerJid (lock);
-
-    if (!HasFullServerJid ())
-      {
-        std::ostringstream msg;
-        msg << "could not discover full server JID for " << client.serverJid;
-        throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
-                                msg.str ());
-      }
-  }
+  const auto jid = EnsureConnected ();
+  if (!jid)
+    {
+      std::ostringstream msg;
+      msg << "could not discover full server JID for " << client.serverJid;
+      throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                              msg.str ());
+    }
 
   const auto mit = states.find (type);
-  CHECK (mit != states.end ());
+  CHECK (mit != states.end ()) << "Notification type not enabled: " << type;
   return mit->second->WaitForChange (known);
 }
 
 /* ************************************************************************** */
 
-Client::Client (const std::string& srv, const std::string& v)
+Client::Client (const std::string& srv, const std::string& v,
+                const std::string& jidStr, const std::string& password)
   : serverJid(srv), version(v)
 {
   SetTimeout (DEFAULT_TIMEOUT);
+
+  const gloox::JID jid(jidStr);
+  impl = std::make_unique<Impl> (*this, jid, password);
 }
 
 Client::~Client () = default;
 
 void
-Client::Connect (const std::string& jidStr, const std::string& password,
-                 const int priority)
+Client::Connect ()
 {
-  const gloox::JID jid(jidStr);
-  impl = std::make_unique<Impl> (*this, jid, password);
-  impl->Connect (priority);
+  CHECK (impl != nullptr);
+
+  /* We always connect with priority -1, because the client will never want
+     to receive any messages for the bare JID.  It only communicates with
+     its full JID.  */
+  impl->Connect (-1);
 }
 
 void
 Client::Disconnect ()
 {
-  if (impl == nullptr)
-    return;
-
+  CHECK (impl != nullptr);
   impl->Disconnect ();
-  impl.reset ();
 }
 
 void
 Client::AddNotification (std::unique_ptr<NotificationType> n)
 {
-  CHECK (impl == nullptr);
-  const auto type = n->GetType ();
-  const auto res = notifications.emplace (type, std::move (n));
-  CHECK (res.second) << "Duplicate notification type added: " << type;
+  CHECK (impl != nullptr);
+  impl->AddNotification (std::move (n));
 }
 
 std::string
@@ -867,8 +972,6 @@ Json::Value
 Client::WaitForChange (const std::string& type, const Json::Value& known)
 {
   CHECK (impl != nullptr);
-  CHECK (notifications.find (type) != notifications.end ())
-      << "Notification type not enabled: " << type;
   return impl->WaitForChange (type, known);
 }
 

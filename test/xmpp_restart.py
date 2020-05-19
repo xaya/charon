@@ -26,8 +26,11 @@ import testcase
 
 import waitforchange
 
+import logging
 import threading
 import time
+
+from jsonrpclib import ProtocolError
 
 
 class Methods (waitforchange.Methods):
@@ -38,14 +41,15 @@ class Methods (waitforchange.Methods):
 
 class UpdateSpammer (threading.Thread):
   """
-  Thread that "spams" updates and calls on our Charon server (state changes).
-  This is run while the XMPP server is restarted, to make sure that Charon
+  Thread that "spams" notification updates on our Charon server.
+  It is run while the XMPP server is restarted, to make sure that Charon
   still handles the disconnect and reconnect gracefully even while things
   are going on as they might in a real-world situation.
   """
 
   def __init__ (self, backend):
     super ().__init__ ()
+    self.log = logging.getLogger ("RpcSpammer")
     self.backend = backend
     self.lock = threading.Lock ()
     self.shouldStop = False
@@ -55,6 +59,7 @@ class UpdateSpammer (threading.Thread):
     while True:
       with self.lock:
         if self.shouldStop:
+          self.log.info ("Spammed %d state updates" % cnt)
           return
 
         self.backend.update ("ignored %d" % cnt)
@@ -62,12 +67,66 @@ class UpdateSpammer (threading.Thread):
 
       # Without holding the lock, sleep a little time to give other parts
       # time to process.
-      time.sleep (0.001)
+      time.sleep (0.01)
 
   def stop (self):
     with self.lock:
       self.shouldStop = True
     self.join ()
+
+  def __enter__ (self):
+    self.start ()
+    return self
+
+  def __exit__ (self, exc, value, traceback):
+    self.stop ()
+
+
+class RpcSpammer (threading.Thread):
+  """
+  Thread that "spams" RPC calls on the Charon client.
+  """
+
+  def __init__ (self, test, client):
+    super ().__init__ ()
+    self.test = test
+    self.log = logging.getLogger ("RpcSpammer")
+    self.client = client
+    self.lock = threading.Lock ()
+    self.shouldStop = False
+
+  def run (self):
+    cnt = 0
+    rpc = self.client.createRpc ()
+    while True:
+      with self.lock:
+        if self.shouldStop:
+          self.log.info ("Spammed %d RPC calls" % cnt)
+          return
+
+        cur = "iteration %d" % cnt
+        try:
+          self.test.assertEqual (rpc.echo (cur), cur)
+        except ProtocolError as exc:
+          # While the server is disconnected, we will get timeout errors.
+          pass
+        cnt += 1
+
+      # Without holding the lock, sleep a little time to give other parts
+      # time to process.
+      time.sleep (0.01)
+
+  def stop (self):
+    with self.lock:
+      self.shouldStop = True
+    self.join ()
+
+  def __enter__ (self):
+    self.start ()
+    return self
+
+  def __exit__ (self, exc, value, traceback):
+    self.stop ()
 
 
 def runTest (t, backend, c, nonce):
@@ -88,21 +147,18 @@ def runTest (t, backend, c, nonce):
 
 with Methods () as backend, \
      testcase.Fixture (["echo"], waitforchange=True) as t, \
+     t.runClient () as c, \
      t.runServer (backend):
 
-  # FIXME: Also keep the client around once it supports reconnects
-  # to test that as well.
-  with t.runClient () as c:
-    t.mainLogger.info ("Initial Charon test...")
-    runTest (t, backend, c, "foo")
+  t.mainLogger.info ("Initial Charon test...")
+  runTest (t, backend, c, "foo")
 
-  spammer = UpdateSpammer (backend)
-  spammer.start ()
+  with UpdateSpammer (backend), \
+       RpcSpammer (t, c):
+    input ("Restart the XMPP server and press Enter to continue...\n")
 
-  input ("Restart the XMPP server and press Enter to continue...\n")
+  # Let the dust settle a bit after stopping the spammer threads.
+  time.sleep (0.1)
 
-  spammer.stop ()
-
-  with t.runClient () as c:
-    t.mainLogger.info ("Testing Charon after the restart...")
-    runTest (t, backend, c, "bar")
+  t.mainLogger.info ("Testing Charon after the restart...")
+  runTest (t, backend, c, "bar")
