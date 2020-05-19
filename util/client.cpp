@@ -253,7 +253,7 @@ main (int argc, char** argv)
     }
 
   LOG (INFO) << "Connecting client to XMPP as " << FLAGS_client_jid;
-  client.Connect (-1);
+  client.Connect ();
 
   if (FLAGS_detect_server)
     {

@@ -95,7 +95,7 @@ public:
   /**
    * Connects to XMPP and starts a thread that processes any data we receive.
    */
-  void Connect (int priority);
+  void Connect ();
 
   /**
    * Disconnects the XMPP client and stops processing data.

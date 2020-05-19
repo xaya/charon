@@ -834,10 +834,14 @@ Client::Client (const std::string& srv, const std::string& v,
 Client::~Client () = default;
 
 void
-Client::Connect (const int priority)
+Client::Connect ()
 {
   CHECK (impl != nullptr);
-  impl->Connect (priority);
+
+  /* We always connect with priority -1, because the client will never want
+     to receive any messages for the bare JID.  It only communicates with
+     its full JID.  */
+  impl->Connect (-1);
 }
 
 void

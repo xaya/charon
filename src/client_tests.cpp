@@ -152,7 +152,7 @@ protected:
         c.registerPresenceHandler (this);
       });
 
-    client.Connect (0);
+    client.Connect ();
     Connect (0);
   }
 
@@ -303,7 +303,7 @@ protected:
   void
   ConnectClient ()
   {
-    client.Connect (0);
+    client.Connect ();
   }
 
   /**
@@ -371,7 +371,7 @@ TEST_F (ClientRpcForwardingTests, CallTimeout)
 TEST_F (ClientRpcForwardingTests, Reconnect)
 {
   client.Disconnect ();
-  client.Connect (0);
+  client.Connect ();
 
   auto srv = ConnectServer ();
   EXPECT_EQ (client.ForwardMethod ("echo", ParseJson (R"(["foo"])")), "foo");
@@ -654,7 +654,7 @@ TEST_F (ClientNotificationTests, Reconnect)
   ConnectClient ({"foo"});
 
   client.Disconnect ();
-  client.Connect (0);
+  client.Connect ();
 
   auto s = ConnectServer ();
   s->AddPubSub (GetServerConfig ().pubsub);
