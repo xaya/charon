@@ -463,6 +463,21 @@ private:
   }
 
   /**
+   * Clears our selected server.  This is done when either the server
+   * goes offline (we receive an unavailable presence for it), or if the
+   * XMPP connection itself is closed.
+   */
+  void ClearSelectedServer ();
+
+  /**
+   * Sets the selected server to the given full JID.  This also notifies
+   * all waiters on that.
+   */
+  void SetSelectedServer (std::unique_lock<std::mutex>& lock,
+                          const gloox::JID& jid,
+                          const SupportedNotifications* sn);
+
+  /**
    * Tries to ensure that we have a fullServerJid set.  If none is set yet,
    * we send a ping or wait for the completion of an existing ping.
    */
@@ -583,6 +598,67 @@ Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
 }
 
 void
+Client::Impl::ClearSelectedServer ()
+{
+  LOG (WARNING) << "Our server has become unavailable";
+  fullServerJid = fullServerJid.bareJID ();
+}
+
+void
+Client::Impl::SetSelectedServer (std::unique_lock<std::mutex>& lock,
+                                 const gloox::JID& jid,
+                                 const SupportedNotifications* sn)
+{
+  CHECK_EQ (jid.bareJID (), fullServerJid.bareJID ());
+
+  fullServerJid = jid;
+  LOG (INFO)
+      << "Found full server JID: " << fullServerJid.full ();
+
+  gloox::Presence resp(gloox::Presence::Available, jid);
+  RunWithClient ([&resp] (gloox::Client& c)
+    {
+      c.send (resp);
+    });
+
+  /* By adding the pubsub instance here to our client, we also
+     replace any existing one and make sure that it is connected
+     to the service indicated by the server.  */
+  if (!states.empty ())
+    {
+      CHECK (sn != nullptr);
+
+      /* Before recreating the pubsub instance, we have to make sure
+         that all running calls to it are done to avoid any memory
+         corruption and race conditions.  */
+      FinishSubscriptions (lock);
+
+      AddPubSub (sn->GetService ());
+
+      const auto& n = sn->GetNotifications ();
+      for (auto& entry : states)
+        {
+          const auto mit = n.find (entry.first);
+          CHECK (mit != n.end ());
+
+          const std::string node = mit->second;
+          auto cb = entry.second->GetItemCallback ();
+
+          LOG (INFO)
+              << "Subscribing to node " << node
+              << " for notification " << entry.first;
+
+          /* The call to SubscribeToNode waits for the subscription
+             response from the server, so we have to do it async.  */
+          subscribeCalls.emplace_back ([this, node, cb] ()
+            {
+              GetPubSub ().SubscribeToNode (node, cb);
+            });
+        }
+    }
+}
+
+void
 Client::Impl::handlePresence (const gloox::Presence& p)
 {
   switch (p.subtype ())
@@ -635,53 +711,7 @@ Client::Impl::handlePresence (const gloox::Presence& p)
 
         /* In case we get multiple replies, we pick the first only.  */
         if (!HasFullServerJid ())
-          {
-            fullServerJid = p.from ();
-            LOG (INFO)
-                << "Found full server JID: " << fullServerJid.full ();
-
-            gloox::Presence resp(gloox::Presence::Available, p.from ());
-            RunWithClient ([&resp] (gloox::Client& c)
-              {
-                c.send (resp);
-              });
-
-            /* By adding the pubsub instance here to our client, we also
-               replace any existing one and make sure that it is connected
-               to the service indicated by the server.  */
-            if (!states.empty ())
-              {
-                CHECK (sn != nullptr);
-
-                /* Before recreating the pubsub instance, we have to make sure
-                   that all running calls to it are done to avoid any memory
-                   corruption and race conditions.  */
-                FinishSubscriptions (lock);
-
-                AddPubSub (sn->GetService ());
-
-                const auto& n = sn->GetNotifications ();
-                for (auto& entry : states)
-                  {
-                    const auto mit = n.find (entry.first);
-                    CHECK (mit != n.end ());
-
-                    const std::string node = mit->second;
-                    auto cb = entry.second->GetItemCallback ();
-
-                    LOG (INFO)
-                        << "Subscribing to node " << node
-                        << " for notification " << entry.first;
-
-                    /* The call to SubscribeToNode waits for the subscription
-                       response from the server, so we have to do it async.  */
-                    subscribeCalls.emplace_back ([this, node, cb] ()
-                      {
-                        GetPubSub ().SubscribeToNode (node, cb);
-                      });
-                  }
-              }
-          }
+          SetSelectedServer (lock, p.from (), sn);
 
         auto ping = ongoingPing.lock ();
         if (ping != nullptr)
@@ -694,10 +724,7 @@ Client::Impl::handlePresence (const gloox::Presence& p)
       {
         std::lock_guard<std::mutex> lock(mut);
         if (p.from () == fullServerJid)
-          {
-            LOG (WARNING) << "Our server has become unavailable";
-            fullServerJid = fullServerJid.bareJID ();
-          }
+          ClearSelectedServer ();
         return;
       }
 
