@@ -478,10 +478,14 @@ private:
                           const SupportedNotifications* sn);
 
   /**
-   * Tries to ensure that we have a fullServerJid set.  If none is set yet,
-   * we send a ping or wait for the completion of an existing ping.
+   * Tries to ensure that we have an active XMPP connection and also a
+   * fullServerJid set.  If none is set yet, we send a ping or wait for the
+   * completion of an existing ping.
+   *
+   * Returns the server JID to send requests to, or an invalid JID if we
+   * could not detect a server or connect.
    */
-  void TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock);
+  gloox::JID EnsureConnected ();
 
   /**
    * Forces all ongoing node subscriptions to be finished.  The caller is
@@ -558,11 +562,13 @@ Client::Impl::AddNotification (std::unique_ptr<NotificationType> n)
   CHECK (res.second) << "Duplicate notification of type " << type;
 }
 
-void
-Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
+gloox::JID
+Client::Impl::EnsureConnected ()
 {
+  std::unique_lock<std::mutex> lock(mut);
+
   if (HasFullServerJid ())
-    return;
+    return fullServerJid;
 
   auto ping = ongoingPing.lock ();
   if (ping == nullptr)
@@ -590,13 +596,13 @@ Client::Impl::TryEnsureFullServerJid (std::unique_lock<std::mutex>& lock)
       if (ping->IsTimedOut ())
         {
           LOG (WARNING) << "Waiting for pong timed out";
-          return;
+          return gloox::JID ();
         }
 
       if (HasFullServerJid ())
         {
           LOG (INFO) << "We now have a full server JID";
-          return;
+          return fullServerJid;
         }
     }
 }
@@ -749,12 +755,12 @@ Client::Impl::HandleDisconnect ()
 std::string
 Client::Impl::GetServerResource ()
 {
-  std::unique_lock<std::mutex> lock(mut);
-  TryEnsureFullServerJid (lock);
+  const auto jid = EnsureConnected ();
 
+  std::unique_lock<std::mutex> lock(mut);
   FinishSubscriptions (lock);
 
-  return fullServerJid.resource ();
+  return jid.resource ();
 }
 
 void
@@ -777,22 +783,17 @@ Json::Value
 Client::Impl::ForwardMethod (const std::string& method,
                              const Json::Value& params)
 {
-  std::unique_ptr<gloox::IQ> iq;
-  {
-    std::unique_lock<std::mutex> lock(mut);
-    TryEnsureFullServerJid (lock);
+  const auto jid = EnsureConnected ();
+  if (!jid)
+    {
+      std::ostringstream msg;
+      msg << "could not discover full server JID for " << client.serverJid;
+      throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                              msg.str ());
+    }
 
-    if (!HasFullServerJid ())
-      {
-        std::ostringstream msg;
-        msg << "could not discover full server JID for " << client.serverJid;
-        throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
-                                msg.str ());
-      }
-
-    iq = std::make_unique<gloox::IQ> (gloox::IQ::Get, fullServerJid);
-    iq->addExtension (new RpcRequest (method, params));
-  }
+  auto iq = std::make_unique<gloox::IQ> (gloox::IQ::Get, jid);
+  iq->addExtension (new RpcRequest (method, params));
 
   auto call = std::make_shared<OngoingRpcCall> (client.timeout);
   call->serverJid = iq->to ();
@@ -841,18 +842,14 @@ Client::Impl::ForwardMethod (const std::string& method,
 Json::Value
 Client::Impl::WaitForChange (const std::string& type, const Json::Value& known)
 {
-  {
-    std::unique_lock<std::mutex> lock(mut);
-    TryEnsureFullServerJid (lock);
-
-    if (!HasFullServerJid ())
-      {
-        std::ostringstream msg;
-        msg << "could not discover full server JID for " << client.serverJid;
-        throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
-                                msg.str ());
-      }
-  }
+  const auto jid = EnsureConnected ();
+  if (!jid)
+    {
+      std::ostringstream msg;
+      msg << "could not discover full server JID for " << client.serverJid;
+      throw RpcServer::Error (jsonrpc::Errors::ERROR_RPC_INTERNAL_ERROR,
+                              msg.str ());
+    }
 
   const auto mit = states.find (type);
   CHECK (mit != states.end ()) << "Notification type not enabled: " << type;
