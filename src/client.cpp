@@ -20,7 +20,7 @@
 
 #include "private/pubsub.hpp"
 #include "private/stanzas.hpp"
-#include "private/xmppclient.hpp"
+#include "xmppclient.hpp"
 
 #include <gloox/error.h>
 #include <gloox/iq.h>

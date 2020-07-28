@@ -18,7 +18,7 @@
 
 #include "private/pubsub.hpp"
 
-#include "private/xmppclient.hpp"
+#include "xmppclient.hpp"
 
 #include <gloox/clientbase.h>
 #include <gloox/pubsubevent.h>

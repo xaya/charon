@@ -18,9 +18,8 @@
 
 #include "private/pubsub.hpp"
 
-#include "private/xmppclient.hpp"
-
 #include "testutils.hpp"
+#include "xmppclient.hpp"
 
 #include <gloox/tag.h>
 

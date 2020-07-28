@@ -30,11 +30,11 @@ charon_HEADERS = \
   rpcserver.hpp \
   rpcwaiter.hpp \
   server.hpp \
-  waiterthread.hpp
+  waiterthread.hpp \
+  xmppclient.hpp
 noinst_HEADERS = \
   private/pubsub.hpp \
-  private/stanzas.hpp \
-  private/xmppclient.hpp
+  private/stanzas.hpp
 
 check_PROGRAMS = tests
 TESTS = tests

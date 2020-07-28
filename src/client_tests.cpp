@@ -20,8 +20,8 @@
 
 #include "server.hpp"
 #include "private/stanzas.hpp"
-#include "private/xmppclient.hpp"
 #include "testutils.hpp"
+#include "xmppclient.hpp"
 
 #include <gloox/message.h>
 #include <gloox/messagehandler.h>
