@@ -48,6 +48,8 @@ access_rules:
     allow: admin
   pubsub_createnode:
     allow: local
+  muc_create:
+    allow: local
 
 shaper_rules:
   max_user_offline_messages:
@@ -73,6 +75,18 @@ modules:
       "*":
         persist_items: false
         purge_offline: true
+  mod_muc:
+    host: "muc.@HOST@"
+    access:
+      - allow
+    access_admin:
+      - allow: admin
+    access_create: muc_create
+    access_persistent: muc_create
+    default_room_options:
+      anonymous: false
+      persistent: true
+      public: true
 
 auth_method: internal
 auth_password_format: plain
