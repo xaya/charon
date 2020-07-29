@@ -255,7 +255,10 @@ XmppClient::handleLog (const gloox::LogLevel level, const gloox::LogArea area,
       LOG (WARNING) << fullMsg.str ();
       break;
     default:
-      VLOG (1) << fullMsg.str ();
+      if (area & (gloox::LogAreaXmlIncoming | gloox::LogAreaXmlOutgoing))
+        VLOG (2) << fullMsg.str ();
+      else
+        VLOG (1) << fullMsg.str ();
       break;
     }
 }
