@@ -183,8 +183,7 @@ XmppClient::Disconnect ()
      is gone.  */
   pubsub.reset ();
 
-  client.disconnect ();
-
+  /* Explicitly stop the receive loop now, before we disconnect.  */
   if (recvLoop != nullptr)
     {
       stopLoop = true;
@@ -192,8 +191,8 @@ XmppClient::Disconnect ()
       recvLoop.reset ();
     }
 
-  while (connectionState != ConnectionState::DISCONNECTED)
-    std::this_thread::sleep_for (WAITING_SLEEP);
+  connectionState = ConnectionState::DISCONNECTED;
+  client.disconnect ();
 }
 
 void
