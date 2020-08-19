@@ -18,6 +18,8 @@
 
 #include "private/stanzas.hpp"
 
+#include "xmldata.hpp"
+
 #include <glog/logging.h>
 
 #include <sstream>
@@ -25,57 +27,8 @@
 namespace charon
 {
 
-namespace
-{
-
 /** XML namespace for our stanza extensions.  */
 #define XMLNS "https://xaya.io/charon/"
-
-/**
- * Parses the CData contained in a given tag into JSON.  Returns true
- * if the parsing was successful.
- */
-bool
-ParseJsonFromTag (const gloox::Tag& t, Json::Value& val)
-{
-  Json::CharReaderBuilder rbuilder;
-  rbuilder["allowComments"] = false;
-  rbuilder["strictRoot"] = false;
-  rbuilder["failIfExtra"] = true;
-  rbuilder["rejectDupKeys"] = true;
-
-  std::istringstream in(t.cdata ());
-  std::string parseErrs;
-  if (!Json::parseFromStream (rbuilder, in, &val, &parseErrs))
-    {
-      LOG (WARNING)
-          << "Failed parsing JSON:\n"
-          << t.cdata () << "\n" << parseErrs;
-      return false;
-    }
-
-  return true;
-}
-
-/**
- * Serialises the given JSON value into the CData of a new tag with
- * the given name and returns the newly created tag.
- */
-std::unique_ptr<gloox::Tag>
-SerialiseJsonToTag (const Json::Value& val, const std::string& tagName)
-{
-  Json::StreamWriterBuilder wbuilder;
-  wbuilder["commentStyle"] = "None";
-  wbuilder["indentation"] = "";
-  wbuilder["enableYAMLCompatibility"] = false;
-  wbuilder["dropNullPlaceholders"] = false;
-  wbuilder["useSpecialFloats"] = false;
-
-  const std::string serialised = Json::writeString (wbuilder, val);
-  return std::make_unique<gloox::Tag> (tagName, serialised);
-}
-
-} // anonymous namespace
 
 /* ************************************************************************** */
 
@@ -116,7 +69,7 @@ RpcRequest::RpcRequest (const gloox::Tag& t)
       LOG (WARNING) << "request tag has no params child";
       return;
     }
-  if (!ParseJsonFromTag (*child, params))
+  if (!DecodeXmlJson (*child, params))
     return;
   if (!params.isObject () && !params.isArray () && !params.isNull ())
     {
@@ -168,7 +121,7 @@ RpcRequest::tag () const
   auto child = std::make_unique<gloox::Tag> ("method", method);
   res->addChild (child.release ());
 
-  child = SerialiseJsonToTag (params, "params");
+  child = EncodeXmlJson ("params", params);
   res->addChild (child.release ());
 
   return res.release ();
@@ -211,7 +164,7 @@ RpcResponse::RpcResponse (const gloox::Tag& t)
           return;
         }
 
-      if (!ParseJsonFromTag (*outer, result))
+      if (!DecodeXmlJson (*outer, result))
         return;
 
       success = true;
@@ -243,7 +196,7 @@ RpcResponse::RpcResponse (const gloox::Tag& t)
   child = outer->findChild ("data");
   if (child == nullptr)
     errorData = Json::Value ();
-  else if (!ParseJsonFromTag (*child, errorData))
+  else if (!DecodeXmlJson (*child, errorData))
     return;
 
   success = false;
@@ -321,7 +274,7 @@ RpcResponse::tag () const
 
   if (success)
     {
-      auto child = SerialiseJsonToTag (result, "result");
+      auto child = EncodeXmlJson ("result", result);
       res->addChild (child.release ());
     }
   else
@@ -337,7 +290,7 @@ RpcResponse::tag () const
 
       if (!errorData.isNull ())
         {
-          auto child = SerialiseJsonToTag (errorData, "data");
+          auto child = EncodeXmlJson ("data", errorData);
           outer->addChild (child.release ());
         }
 
@@ -565,7 +518,7 @@ NotificationUpdate::NotificationUpdate (const gloox::Tag& t)
       return;
     }
 
-  if (!ParseJsonFromTag (t, newState))
+  if (!DecodeXmlJson (t, newState))
     return;
 
   valid = true;
@@ -576,7 +529,7 @@ NotificationUpdate::CreateTag () const
 {
   CHECK (IsValid ()) << "Trying to serialise invalid NotificationUpdate";
 
-  auto res = SerialiseJsonToTag (newState, "update");
+  auto res = EncodeXmlJson ("update", newState);
   CHECK (res->setXmlns (XMLNS));
   CHECK (res->addAttribute ("type", type));
 
