@@ -61,37 +61,38 @@ e.g. `gsp@server/resource`.  It has the following form:
     <iq type="get">
       <request xmlns="https://xaya.io/charon/">
         <method>METHOD</method>
-        <params>PARAMS</params>
+        <params>...</params>
       </request>
     </iq>
 
 Here, `METHOD` is just a string representing the method name of the RPC call.
-`PARAMS` is also a string, which is the serialised JSON of the call parameters
-(i.e. a JSON array or object).
+The `<params>` tag carries a [blob payload](xmldata.md), which should
+be the serialised JSON of the call parameters (i.e. a JSON array or object).
 
 The GSP responds with an IQ `result`.  For a successful call, it returns
 the result of the JSON-RPC method:
 
     <iq type="result">
       <response xmlns="https://xaya.io/charon/">
-        <result>RESULT</result>
+        <result>...</result>
       </response>
     </iq>
 
-`RESULT` in this case is again a string of serialised JSON.  In case
-of an error result from JSON-RPC, a stanza like this is returned instead:
+`<result>` in this case again holds a [data blob](xmldata.md)
+of serialised JSON.  In case of an error result from JSON-RPC,
+a stanza like this is returned instead:
 
     <iq type="result">
       <response xmlns="https://xaya.io/charon/">
         <error code="CODE">
           <message>MESSAGE</message>
-          <data>DATA</data>
+          <data>...</data>
         </error>
       </response>
     </iq>
 
-This holds the JSON-RPC error `CODE`, `MESSAGE` and `DATA` (the latter
-again as serialised JSON).
+This holds the JSON-RPC error `CODE`, `MESSAGE` and data (the latter
+again as serialised JSON in a data blob).
 
 **Note:**  Even for a JSON-RPC *error*, the IQ type is `result`.  IQ `error`s
 would indicate an issue with the transport over XMPP, not a successful
@@ -123,22 +124,25 @@ presence sent to a newly connected client (in addition to the `pong` tag):
     </presence>
 
 Also, whenever the server detects an update to one of the states it provides
-subscription notifications for, it publishes to the corresponding pubsub node
-with a payload that contains the updated value as JSON data (in the same way
-it is returned from the `waitfor*` RPC method):
+subscription notifications for, it publishes an `<update>` stanza
+to the corresponding pubsub node
+with a [payload](xmldata.md) that contains the updated value as JSON data
+(in the same way it is returned from the `waitfor*` RPC method):
 
     <item>
       <update xmlns="https://xaya.io/charon/" type="state">
-        "NEW BEST BLOCK HASH"
+        <raw>"NEW BEST BLOCK HASH"</raw>
       </update>
     </item>
 
     <item>
       <update xmlns="https://xaya.io/charon/" type="pending">
-        {
-          "version": 42,
-          "pending": {"foo": "bar"}
-        }
+        <raw>
+          {
+            "version": 42,
+            "pending": {"foo": "bar"}
+          }
+        </raw>
       </update>
     </item>
 
