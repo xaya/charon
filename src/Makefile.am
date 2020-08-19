@@ -10,10 +10,10 @@ CLEANFILES = $(RPC_STUBS)
 
 libcharon_la_CXXFLAGS = \
   $(JSON_CFLAGS) $(JSONRPCCLIENT_CFLAGS) $(JSONRPCSERVER_CFLAGS) \
-  $(GLOG_CFLAGS) $(GLOOX_CFLAGS)
+  $(GLOG_CFLAGS) $(OPENSSL_CFLAGS) $(GLOOX_CFLAGS)
 libcharon_la_LIBADD = \
   $(JSON_LIBS) $(JSONRPCCLIENT_LIBS) $(JSONRPCSERVER_LIBS) \
-  $(GLOG_LIBS) $(GLOOX_LIBS)
+  $(GLOG_LIBS) $(OPENSSL_LIBS) $(GLOOX_LIBS)
 libcharon_la_SOURCES = \
   client.cpp \
   notifications.cpp \
@@ -36,7 +36,8 @@ charon_HEADERS = \
   xmppclient.hpp
 noinst_HEADERS = \
   private/pubsub.hpp \
-  private/stanzas.hpp
+  private/stanzas.hpp \
+  xmldata_internal.hpp
 
 check_PROGRAMS = tests
 TESTS = tests

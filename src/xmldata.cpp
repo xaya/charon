@@ -16,17 +16,23 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "xmldata.hpp"
+#include "xmldata_internal.hpp"
+
+#include <openssl/evp.h>
 
 #include <glog/logging.h>
 
+#include <cstddef>
 #include <sstream>
+#include <vector>
 
 namespace charon
 {
 
 namespace
 {
+
+/* ************************************************************************** */
 
 /**
  * Returns true if the given string is not considered "binary".  In particular,
@@ -56,6 +62,97 @@ CanStoreRaw (const std::string& str)
 }
 
 /**
+ * Encodes a given binary string as base64.
+ */
+std::string
+EncodeBase64 (const std::string& data)
+{
+  /* We need an upper bound on the length of the generated data, so that we
+     can reserve a buffer large enough.  The output will be four bytes for
+     every three in the input, plus newlines every 64 bytes, plus one NUL at
+     the end.  By doubling the input data plus some extra bytes in the case
+     of very short input, we are certainly above that.  */
+  const size_t bufSize = 3 + 2 * data.size ();
+
+  std::vector<unsigned char> encoded(bufSize, 0);
+  const int n
+      = EVP_EncodeBlock (encoded.data (),
+                         reinterpret_cast<const unsigned char*> (data.data ()),
+                         data.size ());
+  CHECK_LE (n + 1, bufSize);
+
+  /* Strip out all newline characters from the generated string.  */
+  std::ostringstream res;
+  for (int i = 0; i < n; ++i)
+    if (encoded[i] != '\n')
+      res << encoded[i];
+
+  return res.str ();
+}
+
+/**
+ * Tries to decode a given base64 string.
+ */
+bool
+DecodeBase64 (const std::string& encoded, std::string& data)
+{
+  /* Check for the number of padding characters.  */
+  size_t paddings = 0;
+  for (const char c : encoded)
+    switch (c)
+      {
+      case '=':
+        ++paddings;
+        continue;
+
+      case ' ':
+      case '\t':
+      case '\n':
+      case '\v':
+      case '\f':
+      case '\r':
+        continue;
+
+      default:
+        if (paddings > 0)
+          {
+            LOG (WARNING) << "Padding in the middle of base64 data";
+            return false;
+          }
+        break;
+      }
+  if (paddings > 3)
+    {
+      LOG (WARNING) << "Too many padding characters detected: " << paddings;
+      return false;
+    }
+
+  /* The output data will never be longer than the input.  If the input
+     contains whitespace (which is ignored), the difference will be even
+     more pronounced.  */
+  const size_t bufSize = encoded.size ();
+  data.resize (bufSize);
+
+  const unsigned char* in
+      = reinterpret_cast<const unsigned char*> (encoded.data ());
+  unsigned char* out = reinterpret_cast<unsigned char*> (&data[0]);
+  const int n = EVP_DecodeBlock (out, in, encoded.size ());
+  if (n == -1)
+    {
+      LOG (WARNING) << "OpenSSL base64 decode returned error";
+      return false;
+    }
+  CHECK_LE (n, bufSize);
+
+  CHECK_LE (paddings, n);
+  data.resize (n - paddings);
+
+  return true;
+}
+
+/* ************************************************************************** */
+
+/**
  * Tries to decode the payload in a particular payload tag.
  */
 bool
@@ -67,20 +164,34 @@ DecodePayloadTag (const gloox::Tag& tag, std::string& payload)
       return true;
     }
 
+  if (tag.name () == "base64")
+    return DecodeBase64 (tag.cdata (), payload);
+
   LOG (WARNING) << "Invalid payload tag: " << tag.name ();
   return false;
 }
 
+/* ************************************************************************** */
+
 } // anonymous namespace
+
+std::unique_ptr<gloox::Tag>
+EncodeXmlBase64 (const std::string& payload)
+{
+  return std::make_unique<gloox::Tag> ("base64", EncodeBase64 (payload));
+}
 
 std::unique_ptr<gloox::Tag>
 EncodeXmlPayload (const std::string& name, const std::string& payload)
 {
   auto res = std::make_unique<gloox::Tag> (name);
+  if (payload.empty ())
+    return res;
 
-  CHECK (CanStoreRaw (payload)) << "Non-raw payloads are not yet supported";
-  if (!payload.empty ())
+  if (CanStoreRaw (payload))
     res->addChild (new gloox::Tag ("raw", payload));
+  else
+    res->addChild (EncodeXmlBase64 (payload).release ());
 
   return res;
 }
@@ -139,5 +250,7 @@ DecodeXmlJson (const gloox::Tag& tag, Json::Value& val)
 
   return true;
 }
+
+/* ************************************************************************** */
 
 } // namespace charon
