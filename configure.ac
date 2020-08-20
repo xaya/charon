@@ -31,6 +31,7 @@ AX_PKG_CHECK_MODULES([GLOOX], [gloox], [])
 
 # Private dependencies for the library parts.
 AX_PKG_CHECK_MODULES([OPENSSL], [], [openssl])
+AX_PKG_CHECK_MODULES([ZLIB], [], [zlib])
 AX_PKG_CHECK_MODULES([GLOG], [], [libglog])
 
 # Private dependencies for tests and binaries only.

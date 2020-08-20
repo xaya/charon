@@ -77,17 +77,6 @@ TEST_F (XmlPayloadTests, SplitData)
   EXPECT_EQ (val, "foo bar");
 }
 
-TEST_F (XmlPayloadTests, Base64Example)
-{
-  gloox::Tag tag("foo");
-  tag.addChild (new gloox::Tag ("base64",
-                                "VGhpcyBpcyBhbiBleGFtcGxlIHN0cmluZy4="));
-
-  std::string val;
-  ASSERT_TRUE (DecodeXmlPayload (tag, val));
-  EXPECT_EQ (val, "This is an example string.");
-}
-
 TEST_F (XmlPayloadTests, InvalidTag)
 {
   gloox::Tag tag("foo");
@@ -112,6 +101,49 @@ TEST_F (XmlPayloadTests, MaxSize)
 
   tag.addChild (new gloox::Tag ("raw", "x"));
   EXPECT_FALSE (DecodeXmlPayload (tag, decoded));
+}
+
+TEST_F (XmlPayloadTests, Compression)
+{
+  std::ostringstream data;
+  for (unsigned i = 0; i < 1024; ++i)
+    data << "foobar, example data\n" << '\0' << '\xFF';
+
+  const std::string payload = data.str ();
+  LOG (INFO) << "Raw data size: " << payload.size ();
+
+  auto tag = EncodeXmlPayload ("foo", payload);
+  LOG (INFO) << "Compressed XML size: " << tag->xml ().size ();
+
+  std::string recovered;
+  ASSERT_TRUE (DecodeXmlPayload (*tag, recovered));
+  EXPECT_EQ (recovered, payload);
+}
+
+TEST_F (XmlPayloadTests, Base64Example)
+{
+  gloox::Tag tag("foo");
+  tag.addChild (new gloox::Tag ("base64",
+                                "VGhpcyBpcyBhbiBleGFtcGxlIHN0cmluZy4="));
+
+  std::string val;
+  ASSERT_TRUE (DecodeXmlPayload (tag, val));
+  EXPECT_EQ (val, "This is an example string.");
+}
+
+TEST_F (XmlPayloadTests, CompressionExample)
+{
+  auto zlibTag = std::make_unique<gloox::Tag> ("zlib");
+  zlibTag->addAttribute ("size", "24");
+  zlibTag->addChild (new gloox::Tag (
+      "base64", "eJwLycgsVgCi5PzcgqLU4uLUFIWUxJJEPQBvPQjS"));
+
+  gloox::Tag tag("foo");
+  tag.addChild (zlibTag.release ());
+
+  std::string val;
+  ASSERT_TRUE (DecodeXmlPayload (tag, val));
+  EXPECT_EQ (val, "This is compressed data.");
 }
 
 /* ************************************************************************** */

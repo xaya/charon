@@ -20,6 +20,8 @@
 
 #include <openssl/evp.h>
 
+#include <zlib.h>
+
 #include <glog/logging.h>
 
 #include <sstream>
@@ -30,6 +32,19 @@ namespace charon
 
 namespace
 {
+
+/** Minimum length of data to even attempt compression.  */
+constexpr size_t MIN_COMPRESS_LEN = 128;
+
+/**
+ * Minimum compression factor before we actually send compressed data.
+ * Note that we get an extra overhead from base64, so this needs to be small
+ * enough to make it worthwhile.
+ *
+ * The value here is the maximum percentage that the compressed size can
+ * be in terms of raw payload size.
+ */
+constexpr size_t MAX_COMPRESSED_PERCENT = 70;
 
 /* ************************************************************************** */
 
@@ -152,6 +167,63 @@ DecodeBase64 (const std::string& encoded, std::string& data)
 /* ************************************************************************** */
 
 /**
+ * Compresses the given data with zlib's utility compress.
+ */
+std::string
+Compress (const std::string& data)
+{
+  const auto* in = reinterpret_cast<const Bytef*> (data.data ());
+  uLongf destLen = compressBound (data.size ());
+
+  std::string res;
+  res.resize (destLen);
+  auto* out = reinterpret_cast<Bytef*> (&res[0]);
+
+  CHECK_EQ (compress (out, &destLen, in, data.size ()), Z_OK);
+  res.resize (destLen);
+
+  VLOG (2)
+      << "Compressed " << data.size ()
+      << " input bytes into " << res.size ();
+
+  return res;
+}
+
+/**
+ * Tries to uncompress data with zlib's utility uncompress.  Returns
+ * false if there is some error.  The expected size of the uncompressed
+ * data must be passed in.
+ */
+bool
+Uncompress (const std::string& compressed, const size_t len, std::string& data)
+{
+  data.resize (len);
+
+  const auto* in = reinterpret_cast<const Bytef*> (compressed.data ());
+  auto* out = reinterpret_cast<Bytef*> (&data[0]);
+  uLongf destLen = len;
+
+  const int rc = uncompress (out, &destLen, in, compressed.size ());
+  if (rc != Z_OK)
+    {
+      LOG (WARNING) << "zlib uncompress failed with code " << rc;
+      return false;
+    }
+
+  if (destLen != len)
+    {
+      LOG (WARNING)
+          << "Uncompressed data has wrong size " << destLen
+          << " (expected " << len << ")";
+      return false;
+    }
+
+  return true;
+}
+
+/* ************************************************************************** */
+
+/**
  * Tries to decode the payload in a particular payload tag.
  */
 bool
@@ -165,6 +237,22 @@ DecodePayloadTag (const gloox::Tag& tag, std::string& payload)
 
   if (tag.name () == "base64")
     return DecodeBase64 (tag.cdata (), payload);
+
+  if (tag.name () == "zlib")
+    {
+      std::istringstream sizeStr(tag.findAttribute ("size"));
+      size_t len;
+      sizeStr >> len;
+
+      std::string compressed;
+      if (!DecodeXmlPayload (tag, compressed))
+        {
+          LOG (WARNING) << "Failed to extract <zlib> compressed data";
+          return false;
+        }
+
+      return Uncompress (compressed, len, payload);
+    }
 
   LOG (WARNING) << "Invalid payload tag: " << tag.name ();
   return false;
@@ -186,6 +274,35 @@ EncodeXmlPayload (const std::string& name, const std::string& payload)
   auto res = std::make_unique<gloox::Tag> (name);
   if (payload.empty ())
     return res;
+
+  /* Heuristically estimate if it makes sense to compress the data.  We do
+     that only for data that has a somewhat meaningful length, and also only
+     if the compressed size is sufficiently small to make it worthwhile even
+     with adding base64 on top.  */
+  if (payload.size () >= MIN_COMPRESS_LEN)
+    {
+      const std::string compressed = Compress (payload);
+      if (compressed.size () * 100 <= MAX_COMPRESSED_PERCENT * payload.size ())
+        {
+          VLOG (2) << "Sending compressed payload";
+
+          std::ostringstream size;
+          size << payload.size ();
+
+          auto zlibTag = std::make_unique<gloox::Tag> ("zlib");
+          zlibTag->addAttribute ("size", size.str ());
+          zlibTag->addChild (EncodeXmlBase64 (compressed).release ());
+          res->addChild (zlibTag.release ());
+
+          return res;
+        }
+
+      VLOG (2) << "Compression ratio is not sufficient, sending uncompressed";
+    }
+  else
+    VLOG (2)
+        << "Not attempting compression of payload with size "
+        << payload.size ();
 
   if (CanStoreRaw (payload))
     res->addChild (new gloox::Tag ("raw", payload));
