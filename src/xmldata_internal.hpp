@@ -25,8 +25,17 @@
 
 #include "xmldata.hpp"
 
+#include <cstddef>
+
 namespace charon
 {
+
+/**
+ * Maximum allowed payload size.  We have this as a last-resort sanity check
+ * to prevent out-of-memory DoS attacks, e.g. with highly compressed
+ * data (and in general).
+ */
+static constexpr size_t MAX_XML_PAYLOAD_SIZE = 64 * (1 << 20);
 
 /**
  * Encodes a payload string as base64 tag and returns the <base64> tag.

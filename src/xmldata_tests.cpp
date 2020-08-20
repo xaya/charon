@@ -49,7 +49,7 @@ TEST_F (XmlPayloadTests, Roundtrip)
       "abc\ndef<>&",
       u8"äöü",
       std::string ("\0abc\xFFzyx\0", 9),
-      std::string (1 << 20, 'x'),
+      std::string (MAX_XML_PAYLOAD_SIZE, 'x'),
     };
 
   for (const auto& t : tests)
@@ -95,6 +95,23 @@ TEST_F (XmlPayloadTests, InvalidTag)
 
   std::string val;
   EXPECT_FALSE (DecodeXmlPayload (tag, val));
+}
+
+TEST_F (XmlPayloadTests, MaxSize)
+{
+  const std::string halfStr(MAX_XML_PAYLOAD_SIZE / 2, 'x');
+
+  gloox::Tag tag("foo");
+  tag.addChild (new gloox::Tag ("raw", halfStr));
+  tag.addChild (new gloox::Tag ("raw", halfStr));
+  tag.addChild (new gloox::Tag ("raw", ""));
+
+  std::string decoded;
+  ASSERT_TRUE (DecodeXmlPayload (tag, decoded));
+  EXPECT_EQ (decoded, halfStr + halfStr);
+
+  tag.addChild (new gloox::Tag ("raw", "x"));
+  EXPECT_FALSE (DecodeXmlPayload (tag, decoded));
 }
 
 /* ************************************************************************** */

@@ -22,7 +22,6 @@
 
 #include <glog/logging.h>
 
-#include <cstddef>
 #include <sstream>
 #include <vector>
 
@@ -200,15 +199,29 @@ bool
 DecodeXmlPayload (const gloox::Tag& tag, std::string& payload)
 {
   std::ostringstream res;
+  size_t len = 0;
   for (const auto* child : tag.children ())
     {
       std::string cur;
       if (!DecodePayloadTag (*child, cur))
         return false;
+
+      if (len + cur.size () > MAX_XML_PAYLOAD_SIZE)
+        {
+          LOG (WARNING)
+              << "Exceeded maximum payload size of " << MAX_XML_PAYLOAD_SIZE
+              << ", ignoring payload";
+          return false;
+        }
+
       res << cur;
+      len += cur.size ();
     }
 
   payload = res.str ();
+  CHECK_EQ (payload.size (), len);
+  CHECK_LE (payload.size (), MAX_XML_PAYLOAD_SIZE);
+
   return true;
 }
 
