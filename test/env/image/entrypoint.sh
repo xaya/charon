@@ -40,6 +40,7 @@ then
   echo "Registering users..."
   ${ejabberdctl} register xmpptest1 localhost password
   ${ejabberdctl} register xmpptest2 localhost password
+  ${ejabberdctl} register xmpptest3 localhost password
 fi
 
 if [ -n "${join}" ]
