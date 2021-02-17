@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -62,19 +62,17 @@ ParseCommaSeparated (const std::string& lst)
   return res;
 }
 
-/**
- * Tries to parse methods from the libjson-rpc-cpp stubgenerator JSON
- * file.
- */
+} // anonymous namespace
+
 std::set<std::string>
-GetJsonMethods ()
+GetMethodsFromJsonSpec (const std::string& file)
 {
-  if (FLAGS_methods_json_spec.empty ())
+  if (file.empty ())
     return {};
 
-  std::ifstream in(FLAGS_methods_json_spec);
-  CHECK (in) << "Failed to open JSON spec file " << FLAGS_methods_json_spec;
-  LOG (INFO) << "Loading JSON specification file " << FLAGS_methods_json_spec;
+  std::ifstream in(file);
+  CHECK (in) << "Failed to open JSON spec file " << file;
+  LOG (INFO) << "Loading JSON specification file " << file;
 
   Json::Value spec;
   in >> spec;
@@ -97,13 +95,11 @@ GetJsonMethods ()
   return res;
 }
 
-} // anonymous namespace
-
 std::set<std::string>
 GetSelectedMethods ()
 {
   const auto methods = ParseCommaSeparated (FLAGS_methods);
-  const auto fromJson = GetJsonMethods ();
+  const auto fromJson = GetMethodsFromJsonSpec (FLAGS_methods_json_spec);
   const auto excluded = ParseCommaSeparated (FLAGS_methods_exclude);
 
   std::set<std::string> allMethods;
