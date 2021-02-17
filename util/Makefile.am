@@ -11,7 +11,8 @@ libutils_la_LIBADD = \
   $(GLOG_LIBS) $(GFLAGS_LIBS)
 libutils_la_SOURCES = \
   methods.cpp \
-  util-client.cpp
+  util-client.cpp \
+  test.cpp
 noinst_HEADERS = \
   methods.hpp \
   util-client.hpp
