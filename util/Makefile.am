@@ -10,9 +10,11 @@ libutils_la_LIBADD = \
   $(JSON_LIBS) $(JSONRPCCLIENT_LIBS) $(JSONRPCSERVER_LIBS) \
   $(GLOG_LIBS) $(GFLAGS_LIBS)
 libutils_la_SOURCES = \
-  methods.cpp
+  methods.cpp \
+  util-client.cpp
 noinst_HEADERS = \
-  methods.hpp
+  methods.hpp \
+  util-client.hpp
 
 charon_client_CXXFLAGS = \
   -I$(top_srcdir)/src \
