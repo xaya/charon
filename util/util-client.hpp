@@ -71,6 +71,13 @@ public:
   void EnableWaitForPendingChange ();
 
   /**
+   * Sets the root CA file to use for verifying the XMPP server's
+   * certificate.  If this method is not used, then by default the
+   * system's trust store is used.
+   */
+  void SetRootCA (const std::string& path);
+
+  /**
    * Runs the main loop, optionally detecting the server right away
    * (instead of just doing it as needed for RPC calls).  This connects
    * the Charon client, starts the local RPC server, and then blocks until

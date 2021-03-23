@@ -1,5 +1,5 @@
 #   Charon - a transport system for GSP data
-#   Copyright (C) 2019-2020  Autonomous Worlds Ltd
+#   Copyright (C) 2019-2021  Autonomous Worlds Ltd
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -55,6 +55,7 @@ class Client ():
     self.serverJid = serverJid
     self.clientJid = clientJid
     self.password = password
+    self.cafile = None
     self.extraArgs = extraArgs
 
     self.rpcurl = "http://localhost:%d" % port
@@ -72,6 +73,8 @@ class Client ():
     args.extend (["--server_jid", self.serverJid])
     args.extend (["--password", self.password])
     args.extend (["--methods", ",".join (self.methods)])
+    if self.cafile:
+      args.extend (["--cafile", self.cafile])
     args.extend (self.extraArgs)
 
     envVars = dict (os.environ)
@@ -123,6 +126,7 @@ class Server ():
     self.serverJid = serverJid
     self.password = password
     self.pubsub = pubsub
+    self.cafile = None
     self.extraArgs = extraArgs
 
     self.proc = None
@@ -138,6 +142,8 @@ class Server ():
     args.extend (["--password", self.password])
     args.extend (["--pubsub_service", self.pubsub])
     args.extend (["--methods", ",".join (self.methods)])
+    if self.cafile:
+      args.extend (["--cafile", self.cafile])
     args.extend (self.extraArgs)
 
     envVars = dict (os.environ)
