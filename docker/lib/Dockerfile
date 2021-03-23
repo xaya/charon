@@ -19,16 +19,19 @@ RUN apk add --no-cache \
   pkgconfig \
   subversion
 
-# We need to install Gloox from source (until the pubsub changes done by
-# Xaya make it into a Debian package).
+# Move over the source files.
+COPY . /usr/src/charon/
+
+# We need custom patches applied to gloox, so build it from source.
 WORKDIR /usr/src/gloox
 RUN svn checkout svn://svn.camaya.net/gloox/trunk .
+RUN cat /usr/src/charon/data/gloox-patches/*.diff | patch -p0
 RUN ./autogen.sh && ./configure --without-tests && make && make install-strip
 
 # Build and install Charon itself.
 WORKDIR /usr/src/charon
-COPY . .
 RUN ./autogen.sh && ./configure && make && make install-strip
+RUN cp data/letsencrypt.pem /usr/local/share/
 
 # For the final image, just copy over all built / installed stuff.
 FROM xaya/libxayagame
