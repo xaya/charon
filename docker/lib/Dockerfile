@@ -31,7 +31,6 @@ RUN ./autogen.sh && ./configure --without-tests && make && make install-strip
 # Build and install Charon itself.
 WORKDIR /usr/src/charon
 RUN ./autogen.sh && ./configure && make && make install-strip
-RUN cp data/letsencrypt.pem /usr/local/share/
 
 # For the final image, just copy over all built / installed stuff.
 FROM xaya/libxayagame
