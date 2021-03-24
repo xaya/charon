@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -67,6 +67,8 @@ public:
         c.registerMessageHandler (this);
       });
 
+    SetRootCA (GetTestCA ());
+
     /* Connect with the default priority of zero.  */
     Connect (0);
   }
@@ -111,13 +113,31 @@ TEST_F (XmppClientTests, Connecting)
 
 TEST_F (XmppClientTests, FailedConnection)
 {
-  XmppClient wrongPassword(JIDWithoutResource (GetTestAccount (0)), "wrong");
+  const auto& acc = GetTestAccount (0);
+
+  XmppClient wrongPassword(JIDWithoutResource (acc), "wrong");
+  wrongPassword.SetRootCA (GetTestCA ());
   EXPECT_FALSE (wrongPassword.Connect (0));
   EXPECT_FALSE (wrongPassword.IsConnected ());
 
   XmppClient invalidServer(gloox::JID ("test@invalid.server"), "password");
+  wrongPassword.SetRootCA (GetTestCA ());
   EXPECT_FALSE (invalidServer.Connect (0));
   EXPECT_FALSE (invalidServer.IsConnected ());
+
+  if (GetServerConfig ().server == std::string ("localhost"))
+    {
+      XmppClient invalidCert(JIDWithoutResource (acc), acc.password);
+      /* We do not set any explicit CA file, which means that the system
+         default will be used.  And that will make the localhost test server
+         with a self-signed certificate fail.  */
+      EXPECT_FALSE (invalidCert.Connect (0));
+      EXPECT_FALSE (invalidCert.IsConnected ());
+    }
+  else
+    LOG (WARNING)
+        << "Skipping test for invalid TLS certificate"
+        << " on a server that is not localhost";
 }
 
 TEST_F (XmppClientTests, Reconnection)

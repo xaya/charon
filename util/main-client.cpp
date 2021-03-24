@@ -37,6 +37,9 @@ DEFINE_string (backend_version, "",
 DEFINE_string (client_jid, "", "Bare or full JID for the client");
 DEFINE_string (password, "", "XMPP password for the client JID");
 
+DEFINE_string (cafile, "",
+               "if set, use this file as CA trust root of the system default");
+
 DEFINE_int32 (port, 0, "Port for the local JSON-RPC server");
 
 DEFINE_bool (waitforchange, false, "If true, enable waitforchange updates");
@@ -77,6 +80,9 @@ main (int argc, char** argv)
         client.EnableWaitForChange ();
       if (FLAGS_waitforpendingchange)
         client.EnableWaitForPendingChange ();
+
+      if (!FLAGS_cafile.empty ())
+        client.SetRootCA (FLAGS_cafile);
 
       client.Run (FLAGS_detect_server);
       return EXIT_SUCCESS;

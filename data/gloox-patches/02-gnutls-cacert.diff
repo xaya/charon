@@ -1,0 +1,133 @@
+Index: src/tlsgnutlsclient.cpp
+===================================================================
+--- src/tlsgnutlsclient.cpp	(revision 4940)
++++ src/tlsgnutlsclient.cpp	(working copy)
+@@ -22,12 +22,16 @@
+ {
+ 
+   GnuTLSClient::GnuTLSClient( TLSHandler* th, const std::string& server )
+-    : GnuTLSBase( th, server )
++    : GnuTLSBase( th, server ), m_credentials( NULL ), m_trust_list( NULL )
+   {
+   }
+ 
+   GnuTLSClient::~GnuTLSClient()
+   {
++    if( m_trust_list )
++      gnutls_x509_trust_list_deinit( m_trust_list, 1 );
++    if( m_credentials )
++      gnutls_certificate_free_credentials( m_credentials );
+   }
+ 
+   void GnuTLSClient::cleanup()
+@@ -34,13 +38,16 @@
+   {
+     GnuTLSBase::cleanup();
+     if( m_credentials )
++    {
+       gnutls_certificate_free_credentials( m_credentials );
+-    init();
++      m_credentials = NULL;
++    }
++    init(EmptyString, EmptyString, m_cacerts);
+   }
+ 
+   bool GnuTLSClient::init( const std::string& /*clientKey*/,
+                            const std::string& /*clientCerts*/,
+-                           const StringList& /*cacerts*/ )
++                           const StringList& cacerts )
+   {
+     if( m_initLib && gnutls_global_init() != 0 )
+       return false;
+@@ -48,9 +55,12 @@
+     if( gnutls_certificate_allocate_credentials( &m_credentials ) < 0 )
+       return false;
+ 
++    setCACerts( cacerts );
++
+     if( gnutls_init( m_session, GNUTLS_CLIENT | GNUTLS_NONBLOCK ) != 0 )
+     {
+       gnutls_certificate_free_credentials( m_credentials );
++      m_credentials = NULL;
+       return false;
+     }
+ 
+@@ -79,7 +89,11 @@
+     }
+     int ret = gnutls_priority_set_direct( *m_session, prios.c_str(), 0 );
+     if( ret != GNUTLS_E_SUCCESS )
++    {
++      gnutls_certificate_free_credentials( m_credentials );
++      m_credentials = NULL;
+       return false;
++    }
+ 
+     gnutls_certificate_set_x509_system_trust( m_credentials );
+     gnutls_credentials_set( *m_session, GNUTLS_CRD_CERTIFICATE, m_credentials );
+@@ -100,9 +114,23 @@
+   {
+     m_cacerts = cacerts;
+ 
++    if( m_trust_list )
++    {
++      gnutls_x509_trust_list_deinit( m_trust_list, 1 );
++      m_trust_list = NULL;
++    }
++    gnutls_x509_trust_list_init( &m_trust_list, 0 );
++
+     StringList::const_iterator it = m_cacerts.begin();
+     for( ; it != m_cacerts.end(); ++it )
++    {
+       gnutls_certificate_set_x509_trust_file( m_credentials, (*it).c_str(), GNUTLS_X509_FMT_PEM );
++      if( m_trust_list )
++        gnutls_x509_trust_list_add_trust_file( m_trust_list, (*it).c_str(), NULL, GNUTLS_X509_FMT_PEM, 0, 0 );
++    }
++
++    if( cacerts.empty() && m_trust_list )
++      gnutls_x509_trust_list_add_system_trust( m_trust_list, 0, 0 );
+   }
+ 
+   void GnuTLSClient::setClientCert( const std::string& clientKey, const std::string& clientCerts )
+@@ -162,7 +190,7 @@
+         m_certInfo.status |= CertInvalid;
+     }
+ 
+-    m_certInfo.chain = verifyAgainstCAs( cert[certListSize-1], 0 /*CAList*/, 0 /*CAListSize*/ );
++    m_certInfo.chain = verifyAgainstCAs( cert[certListSize-1] );
+ 
+     time_t t = gnutls_x509_crt_get_activation_time( cert[0] );
+     if( t == -1 )
+@@ -229,10 +257,15 @@
+     return verifyCert( cert, result );
+   }
+ 
+-  bool GnuTLSClient::verifyAgainstCAs( gnutls_x509_crt_t cert, gnutls_x509_crt_t* CAList, int CAListSize )
++  bool GnuTLSClient::verifyAgainstCAs( gnutls_x509_crt_t cert )
+   {
++    if( !m_trust_list )
++      return false;
++
+     unsigned int result;
+-    gnutls_x509_crt_verify( cert, CAList, CAListSize, GNUTLS_VERIFY_ALLOW_X509_V1_CA_CRT, &result );
++    if( gnutls_x509_trust_list_verify_crt( m_trust_list, &cert, 1, GNUTLS_VERIFY_ALLOW_X509_V1_CA_CRT, &result, NULL ) != GNUTLS_E_SUCCESS )
++      return false;
++
+     return verifyCert( cert, result );
+   }
+ 
+Index: src/tlsgnutlsclient.h
+===================================================================
+--- src/tlsgnutlsclient.h	(revision 4940)
++++ src/tlsgnutlsclient.h	(working copy)
+@@ -71,9 +71,10 @@
+       virtual void getCertInfo();
+ 
+       bool verifyAgainst( gnutls_x509_crt_t cert, gnutls_x509_crt_t issuer );
+-      bool verifyAgainstCAs( gnutls_x509_crt_t cert, gnutls_x509_crt_t *CAList, int CAListSize );
++      bool verifyAgainstCAs( gnutls_x509_crt_t cert );
+ 
+       gnutls_certificate_credentials_t m_credentials;
++      gnutls_x509_trust_list_t m_trust_list;
+ 
+   };
+ 

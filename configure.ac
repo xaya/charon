@@ -41,6 +41,7 @@ PKG_CHECK_MODULES([GTEST], [gmock gtest_main])
 
 AC_CONFIG_FILES([
   Makefile \
+  data/Makefile \
   src/Makefile \
   test/Makefile \
   util/Makefile \

@@ -148,6 +148,11 @@ public:
   void operator= (const XmppClient&) = delete;
 
   /**
+   * Sets the root CA certificate to use for TLS verification.
+   */
+  void SetRootCA (const std::string& path);
+
+  /**
    * Adds a pubsub handler for the given pubsub service JID.
    */
   void AddPubSub (const gloox::JID& service);

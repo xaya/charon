@@ -258,6 +258,12 @@ UtilClient::EnableWaitForPendingChange ()
 }
 
 void
+UtilClient::SetRootCA (const std::string& path)
+{
+  impl->client.SetRootCA (path);
+}
+
+void
 UtilClient::Run (const bool detectServer)
 {
   LOG (INFO) << "Connecting client to XMPP as " << impl->clientJid;

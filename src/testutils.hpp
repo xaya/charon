@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -61,6 +61,12 @@ struct ServerConfiguration
   /** The pubsub service.  */
   const char* pubsub;
 
+  /**
+   * The CA certificate file (relative to the repository "data" folder)
+   * that is used by the test server.
+   */
+  const char* cafile;
+
   /** The test accounts.  */
   TestAccount accounts[2];
 
@@ -82,6 +88,11 @@ const ServerConfiguration& GetServerConfig ();
  * Returns the n-th TestAccount from the selected server config.
  */
 const TestAccount& GetTestAccount (unsigned n);
+
+/**
+ * Returns the filename to the root CA certificate for the test server.
+ */
+std::string GetTestCA ();
 
 /**
  * Constructs the JID for a test account, without resource.

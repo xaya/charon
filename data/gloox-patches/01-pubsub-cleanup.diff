@@ -1,0 +1,46 @@
+Index: src/pubsubmanager.cpp
+===================================================================
+--- src/pubsubmanager.cpp	(revision 4940)
++++ src/pubsubmanager.cpp	(working copy)
+@@ -593,6 +593,12 @@
+       }
+     }
+ 
++    Manager::~Manager()
++    {
++      if( m_parent )
++        m_parent->removeIDHandler( this );
++    }
++
+     const std::string Manager::getSubscriptionsOrAffiliations( const JID& service,
+                                                                ResultHandler* handler,
+                                                                TrackContext context )
+Index: src/pubsubmanager.h
+===================================================================
+--- src/pubsubmanager.h	(revision 4940)
++++ src/pubsubmanager.h	(working copy)
+@@ -88,10 +88,7 @@
+          */
+         Manager( ClientBase* parent );
+ 
+-        /**
+-         * Default virtual destructor.
+-         */
+-        virtual ~Manager() {}
++        virtual ~Manager();
+ 
+         /**
+          * Subscribe to a node.
+Index: src/tests/pubsubmanager/pubsubmanager_test.cpp
+===================================================================
+--- src/tests/pubsubmanager/pubsubmanager_test.cpp	(revision 4940)
++++ src/tests/pubsubmanager/pubsubmanager_test.cpp	(working copy)
+@@ -153,6 +153,8 @@
+     void registerStanzaExtension( StanzaExtension* se )
+       { delete se; }
+ 
++    void removeIDHandler( IqHandler* ) {}
++
+     int failed;
+ 
+   protected:

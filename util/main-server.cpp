@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2021  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -47,6 +47,8 @@ DEFINE_string (server_jid, "", "Bare or full JID for the server");
 DEFINE_string (password, "", "XMPP password for the server JID");
 DEFINE_int32 (priority, 0, "Priority for the XMPP connection");
 
+DEFINE_string (cafile, "",
+               "if set, use this file as CA trust root of the system default");
 DEFINE_string (pubsub_service, "", "The pubsub service to use on the server");
 
 DEFINE_bool (waitforchange, false, "If true, enable waitforchange updates");
@@ -133,6 +135,9 @@ main (int argc, char** argv)
   if (FLAGS_waitforpendingchange)
     srv.AddNotification (NewWaiter<charon::PendingChangeNotification> (
         "waitforpendingchange"));
+
+  if (!FLAGS_cafile.empty ())
+    srv.SetRootCA (FLAGS_cafile);
 
   LOG (INFO) << "Connecting server to XMPP as " << FLAGS_server_jid;
 

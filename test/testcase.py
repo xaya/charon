@@ -1,5 +1,5 @@
 #   Charon - a transport system for GSP data
-#   Copyright (C) 2019-2020  Autonomous Worlds Ltd
+#   Copyright (C) 2019-2021  Autonomous Worlds Ltd
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -111,11 +111,13 @@ class Fixture (object):
       extraArgs.append ("--waitforchange")
 
     acc = self.cfg["accounts"]
-    return charonbin.Client (self.basedir, binary, port, methods,
-                             self.getAccountJid (acc[0]),
-                             self.getAccountJid (acc[1]),
-                             acc[1][1],
-                             extraArgs)
+    res = charonbin.Client (self.basedir, binary, port, methods,
+                            self.getAccountJid (acc[0]),
+                            self.getAccountJid (acc[1]),
+                            acc[1][1],
+                            extraArgs)
+    res.cafile = self.getRootCA ()
+    return res
 
   @contextmanager
   def runServer (self, obj, methods=None, extraArgs=[]):
@@ -136,11 +138,12 @@ class Fixture (object):
       extraArgs.append ("--waitforchange")
 
     acc = self.cfg["accounts"]
-    with rpcserver.Server (("localhost", port), obj), \
-         charonbin.Server (self.basedir, binary, methods, backend,
-                           self.getAccountJid (acc[0]),
-                           acc[0][1], self.cfg["pubsub"],
-                           extraArgs):
+    srv = charonbin.Server (self.basedir, binary, methods, backend,
+                            self.getAccountJid (acc[0]),
+                            acc[0][1], self.cfg["pubsub"],
+                            extraArgs)
+    srv.cafile = self.getRootCA ()
+    with rpcserver.Server (("localhost", port), obj), srv:
       yield
 
   def assertEqual (self, a, b):
@@ -185,6 +188,18 @@ class Fixture (object):
 
     return "%s@%s" % (acc[0], self.cfg["server"])
 
+  def getRootCA (self):
+    """
+    Returns the full path of the root CA file, based on our server
+    config in self.cfg.
+    """
+
+    top_srcdir = os.getenv ("top_srcdir")
+    if top_srcdir is None:
+      top_srcdir = ".."
+
+    return os.path.join (top_srcdir, "data", self.cfg["cafile"])
+
   def getServerConfig (self):
     """
     Returns the XMPP server, pubsub service and test accounts to use
@@ -204,6 +219,7 @@ class Fixture (object):
       return {
         "server": "localhost",
         "pubsub": "pubsub.localhost",
+        "cafile": "testenv.pem",
         "accounts": [
           ("xmpptest1", "password"),
           ("xmpptest2", "password"),
@@ -214,6 +230,7 @@ class Fixture (object):
       return {
         "server": "chat.xaya.io",
         "pubsub": "pubsub.chat.xaya.io",
+        "cafile": "letsencrypt.pem",
         "accounts": [
           ("xmpptest1", "CkEfa5+WT2Rc5/TiMDhMynAbSJ+DY9FmE5lcWgWMRQWUBV5UQsgjiB"
                         "WL302N4kdLZYygJVBVx3vYsDNUx8xBbw27WA=="),
