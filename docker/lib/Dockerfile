@@ -26,7 +26,9 @@ COPY . /usr/src/charon/
 WORKDIR /usr/src/gloox
 RUN svn checkout svn://svn.camaya.net/gloox/trunk .
 RUN cat /usr/src/charon/data/gloox-patches/*.diff | patch -p0
-RUN ./autogen.sh && ./configure --without-tests && make && make install-strip
+RUN ./autogen.sh \
+  && ./configure --without-tests --with-gnutls=yes \
+  && make && make install-strip
 
 # Build and install Charon itself.
 WORKDIR /usr/src/charon
