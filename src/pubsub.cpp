@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2020  Autonomous Worlds Ltd
+    Copyright (C) 2019-2022  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -140,9 +140,13 @@ public:
                       const gloox::Error* error) override
   {
     if (error == nullptr)
-      VLOG (1) << "Node " << node << " has been deleted";
+      {
+        VLOG (1) << "Node " << node << " has been deleted";
+      }
     else
-      LOG (ERROR) << "Error deleting node " << node << ": " << error->text ();
+      {
+        LOG (ERROR) << "Error deleting node " << node << ": " << error->text ();
+      }
   }
 
   void
@@ -150,9 +154,13 @@ public:
                               const gloox::Error* error) override
   {
     if (error == nullptr)
-      VLOG (1) << "Unsubscribed from node";
+      {
+        VLOG (1) << "Unsubscribed from node";
+      }
     else
-      LOG (ERROR) << "Error unsubscribing: " << error->text ();
+      {
+        LOG (ERROR) << "Error unsubscribing: " << error->text ();
+      }
   }
 
 };

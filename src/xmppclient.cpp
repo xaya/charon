@@ -1,6 +1,6 @@
 /*
     Charon - a transport system for GSP data
-    Copyright (C) 2019-2021  Autonomous Worlds Ltd
+    Copyright (C) 2019-2022  Autonomous Worlds Ltd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -270,9 +270,13 @@ XmppClient::handleLog (const gloox::LogLevel level, const gloox::LogArea area,
       break;
     default:
       if (area & (gloox::LogAreaXmlIncoming | gloox::LogAreaXmlOutgoing))
-        VLOG (2) << fullMsg.str ();
+        {
+          VLOG (2) << fullMsg.str ();
+        }
       else
-        VLOG (1) << fullMsg.str ();
+        {
+          VLOG (1) << fullMsg.str ();
+        }
       break;
     }
 }
