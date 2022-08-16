@@ -19,6 +19,9 @@ RUN apk add --no-cache \
   pkgconfig \
   subversion
 
+# Number of parallel cores to use for make builds.
+ARG N=1
+
 # Move over the source files.
 COPY . /usr/src/charon/
 
@@ -28,11 +31,11 @@ RUN svn checkout svn://svn.camaya.net/gloox/trunk .
 RUN cat /usr/src/charon/data/gloox-patches/*.diff | patch -p0
 RUN ./autogen.sh \
   && ./configure --without-tests --with-gnutls=yes \
-  && make && make install-strip
+  && make -j${N} && make install-strip
 
 # Build and install Charon itself.
 WORKDIR /usr/src/charon
-RUN ./autogen.sh && ./configure && make && make install-strip
+RUN ./autogen.sh && ./configure && make -j${N} && make install-strip
 
 # For the final image, just copy over all built / installed stuff.
 FROM xaya/libxayagame
